@@ -35,7 +35,8 @@ import {
   GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
-  User
+  User,
+  signInAnonymously
 } from 'firebase/auth';
 import {
   getFirestore,
@@ -52,7 +53,6 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration ---
-// ✅ ใช้ Config เดิมของคุณ
 const firebaseConfig = {
   apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
   authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
@@ -209,7 +209,7 @@ const AccountCard = ({ account, onClick, usage }: { account: Account, onClick: (
         <p className="text-xs opacity-70">{account.type === 'credit' ? 'วงเงินคงเหลือ' : 'ยอดเงินในบัญชี'}</p>
         <p className="text-xl font-bold">{formatCurrency(account.balance)}</p>
       </div>
-      {account.type === 'credit' && account.limit && (
+      {account.type === 'credit' && account.limit && account.limit > 0 && (
         <div className="w-full bg-black/20 h-1.5 rounded-full overflow-hidden mt-2">
            <div className="bg-white h-full" style={{ width: `${Math.min(((account.limit - account.balance) / account.limit) * 100, 100)}%` }}></div>
         </div>
@@ -220,8 +220,10 @@ const AccountCard = ({ account, onClick, usage }: { account: Account, onClick: (
            <span>วงเงิน: {formatCurrency(account.limit || 0)}</span>
         </div>
       )}
-      {account.totalDebt && account.totalDebt > 0 && (
-         <p className="text-[10px] text-rose-200 mt-1">ภาระหนี้: {formatCurrency(account.totalDebt)}</p>
+      {account.totalDebt !== undefined && account.totalDebt > 0 && (
+         <p className="text-[10px] text-rose-200 mt-1 flex items-center gap-1">
+            <TrendingUp size={10} className="rotate-180"/> ภาระหนี้: {formatCurrency(account.totalDebt)}
+         </p>
       )}
     </div>
   </div>
@@ -277,9 +279,13 @@ export default function App() {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login Failed:", error);
-      alert("เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+      if (error.code === 'auth/unauthorized-domain') {
+        alert("⚠️ เข้าสู่ระบบไม่ได้: โดเมนนี้ยังไม่ได้รับอนุญาตใน Firebase\nกรุณาไปที่ Firebase Console -> Authentication -> Settings -> Authorized Domains แล้วเพิ่มโดเมนของคุณลงไปครับ");
+      } else {
+        alert("เข้าสู่ระบบไม่สำเร็จ: " + error.message);
+      }
     }
   };
 
@@ -431,7 +437,7 @@ export default function App() {
                updatedAt: serverTimestamp()
              };
 
-             if (debt > 0) accData.totalDebt = debt;
+             if (debt > 0) accData.totalDebt = debt; else accData.totalDebt = 0;
 
              if (type === 'credit') {
                accData.limit = limitTotal > 0 ? limitTotal : 0; 
@@ -447,7 +453,13 @@ export default function App() {
                batch.update(doc(db, 'artifacts', appId, 'users', user.uid, 'accounts', accId), accData);
              } else {
                const ref = doc(collection(db, 'artifacts', appId, 'users', user.uid, 'accounts'));
-               batch.set(ref, { ...accData, balance: accData.balance || 0, createdAt: serverTimestamp() });
+               batch.set(ref, { 
+                 ...accData, 
+                 balance: accData.balance || 0, 
+                 limit: accData.limit || 0,
+                 totalDebt: accData.totalDebt || 0,
+                 createdAt: serverTimestamp() 
+               });
                accId = ref.id;
                newAccountsCache.set(accKey, accId);
                accCount++;
@@ -462,7 +474,7 @@ export default function App() {
           if (accId && desc && desc !== 'ไม่มี' && desc !== 'N/A' && amount > 0) {
              const txRef = doc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'));
              const isPaid = clean(idxStatus).includes('จ่ายแล้ว');
-             const date = monthStr ? parseThaiMonthToDate(monthStr) : new Date().toISOString().split('T')[0];
+             const date = parseThaiMonthToDate(monthStr);
 
              batch.set(txRef, {
                accountId: accId,
@@ -527,7 +539,7 @@ export default function App() {
   };
 
   const handleClearAll = async () => {
-    if (!user || !confirm('ล้างข้อมูลทั้งหมด?')) return;
+    if (!confirm('ล้างข้อมูลทั้งหมด?')) return;
     setLoading(true);
     const batch = writeBatch(db);
     accounts.forEach(a => batch.delete(doc(db, 'artifacts', appId, 'users', user.uid, 'accounts', a.id)));
@@ -806,7 +818,8 @@ export default function App() {
              <p className="text-xs font-bold text-blue-400 uppercase flex items-center gap-1"><ArrowRightLeft size={12}/> โอนไปที่ / จ่ายบิล</p>
              <select className="w-full p-3 rounded-xl border border-blue-200 text-sm font-semibold bg-white outline-none" value={newTx.toAccountId || ''} onChange={e => setNewTx({ ...newTx, toAccountId: e.target.value })}>
                <option value="">-- เลือกปลายทาง --</option>
-               {accounts.filter(a => a.id !== newTx.accountId).map(a => <option key={a.id} value={a.id}>{a.type === 'credit' ? '💳' : '🏦'} {a.bank} - {a.name}</option>)}
+               {accounts.filter(a => a.id !== newTx.accountId).map(a => (
+                 <option key={a.id} value={a.id}>{a.type === 'credit' ? '💳' : '🏦'} {a.bank} - {a.name}</option>))}
              </select>
           </div>
         )}
