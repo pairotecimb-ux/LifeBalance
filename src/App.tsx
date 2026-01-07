@@ -24,13 +24,18 @@ import {
   Building,
   MoreHorizontal,
   Search,
-  X
+  X,
+  LogOut,
+  Lock
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
   getAuth,
-  signInAnonymously,
+  signInWithPopup,
+  GoogleAuthProvider,
+  signOut,
   onAuthStateChanged,
+  User
 } from 'firebase/auth';
 import {
   getFirestore,
@@ -47,6 +52,7 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration ---
+// ✅ ใช้ Config เดิมของคุณ
 const firebaseConfig = {
   apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
   authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
@@ -108,7 +114,6 @@ const getThaiMonthName = (dateStr: string) => {
   return date.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
 };
 
-// แปลง "ธ.ค.-68" -> "2025-12-01"
 const parseThaiMonthToDate = (str: string) => {
   if (!str) return new Date().toISOString().split('T')[0];
   const parts = str.trim().split(/[-/]/); 
@@ -121,11 +126,10 @@ const parseThaiMonthToDate = (str: string) => {
   const monthIndex = months.findIndex(m => mStr.includes(m));
   
   let year = parseInt(yStr);
-  if (year < 100) year += 2500; // สมมติว่าเป็น พ.ศ. ย่อ (68 -> 2568)
-  year -= 543; // แปลงเป็น ค.ศ.
+  if (year < 100) year += 2500; 
+  year -= 543; 
 
   if (monthIndex > -1 && !isNaN(year)) {
-    // สร้างวันที่ 1 ของเดือนนั้นๆ
     const m = (monthIndex + 1).toString().padStart(2, '0');
     return `${year}-${m}-01`; 
   }
@@ -151,6 +155,39 @@ const getBankColor = (bankName: string) => {
 };
 
 // --- Components ---
+
+const LoginScreen = ({ onLogin }: { onLogin: () => void }) => (
+  <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center relative overflow-hidden">
+    {/* Background Effects */}
+    <div className="absolute top-[-20%] left-[-20%] w-[500px] h-[500px] bg-blue-600/20 rounded-full blur-[100px]"></div>
+    <div className="absolute bottom-[-20%] right-[-20%] w-[500px] h-[500px] bg-purple-600/20 rounded-full blur-[100px]"></div>
+
+    <div className="bg-white/10 backdrop-blur-xl p-8 rounded-3xl border border-white/20 shadow-2xl max-w-sm w-full relative z-10">
+      <div className="w-16 h-16 bg-gradient-to-tr from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg rotate-3">
+        <CreditCard className="text-white w-8 h-8" />
+      </div>
+      <h1 className="text-2xl font-bold text-white mb-2">Credit Manager Pro</h1>
+      <p className="text-slate-300 text-sm mb-8">จัดการบัตรเครดิตและรายรับรายจ่าย<br/>อย่างมืออาชีพ ปลอดภัย และส่วนตัว</p>
+      
+      <button 
+        onClick={onLogin}
+        className="w-full bg-white text-slate-900 py-3.5 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-slate-50 transition active:scale-95 shadow-lg"
+      >
+        <svg className="w-5 h-5" viewBox="0 0 24 24">
+          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.84z" fill="#FBBC05"/>
+          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+        </svg>
+        เข้าสู่ระบบด้วย Google
+      </button>
+      
+      <p className="mt-6 text-[10px] text-slate-400 flex items-center justify-center gap-1">
+        <Lock size={10} /> ข้อมูลของคุณจะถูกเก็บเป็นความลับ
+      </p>
+    </div>
+  </div>
+);
 
 const AccountCard = ({ account, onClick, usage }: { account: Account, onClick: () => void, usage: number }) => (
   <div onClick={onClick} className={`relative p-4 rounded-2xl text-white overflow-hidden bg-gradient-to-br ${account.color} shadow-lg cursor-pointer hover:scale-[1.02] transition-transform border border-white/10`}>
@@ -193,13 +230,14 @@ const AccountCard = ({ account, onClick, usage }: { account: Account, onClick: (
 // --- Main App ---
 
 export default function App() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'wallet' | 'transactions' | 'settings'>('dashboard');
   
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [importing, setImporting] = useState(false); // New Loading State
+  const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   // Modals & Sheets
   const [showAddTx, setShowAddTx] = useState(false);
@@ -208,7 +246,7 @@ export default function App() {
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
 
   // Filters
-  const [filterMonth, setFilterMonth] = useState<string>(''); // YYYY-MM
+  const [filterMonth, setFilterMonth] = useState<string>('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
@@ -227,20 +265,37 @@ export default function App() {
 
   // --- Firebase Init ---
   useEffect(() => {
-    const init = async () => {
-      try {
-        await signInAnonymously(auth);
-      } catch (error) {
-        console.error("Auth Error:", error);
-      }
-    };
-    init();
-    return onAuthStateChanged(auth, setUser);
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
+
+  // --- Login / Logout ---
+  const handleLogin = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      console.error("Login Failed:", error);
+      alert("เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    }
+  };
+
+  const handleLogout = async () => {
+    if (confirm('คุณต้องการออกจากระบบหรือไม่?')) {
+      await signOut(auth);
+    }
+  };
 
   // --- Data Fetching ---
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setAccounts([]);
+      setTransactions([]);
+      return;
+    }
     setLoading(true);
     
     const unsubAcc = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'accounts'), (snap) => {
@@ -258,13 +313,11 @@ export default function App() {
 
   // --- Logic & Stats ---
   
-  // Available months for filter
   const availableMonths = useMemo(() => {
     const months = new Set(transactions.map(t => t.date.substring(0, 7)));
     return Array.from(months).sort().reverse();
   }, [transactions]);
 
-  // Filtered Transactions
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
       if (filterMonth && !t.date.startsWith(filterMonth)) return false;
@@ -274,7 +327,6 @@ export default function App() {
     });
   }, [transactions, filterMonth, filterType, filterStatus]);
 
-  // Monthly Stats
   const monthlyStats = useMemo(() => {
     const income = filteredTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
     const expense = filteredTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
@@ -283,7 +335,6 @@ export default function App() {
 
   const totalAssets = accounts.filter(a => a.type === 'bank' || a.type === 'cash').reduce((sum, a) => sum + a.balance, 0);
   const totalDebt = accounts.reduce((sum, a) => sum + (a.totalDebt || 0), 0);
-  // Credit usage logic is a bit complex if not tracking separately, let's rely on limit-balance
   const totalCreditUsed = accounts.filter(a => a.type === 'credit').reduce((sum, a) => sum + ((a.limit || 0) - a.balance), 0);
 
   // --- Handlers ---
@@ -292,7 +343,7 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file || !user) return;
 
-    setImporting(true); // Start Loading
+    setImporting(true);
 
     const reader = new FileReader();
     reader.onload = async (ev) => {
@@ -301,7 +352,6 @@ export default function App() {
         let text = '';
         try { text = new TextDecoder('utf-8').decode(buffer); } catch (e) {}
         
-        // Auto-Detect Encoding
         if (!text.includes('ประเภทบัญชี')) {
           try { text = new TextDecoder('windows-874').decode(buffer); } catch (e) {}
         }
@@ -317,7 +367,6 @@ export default function App() {
         const headers = lines[headerIdx].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
         const getCol = (key: string) => headers.findIndex(h => h.includes(key));
 
-        // Indices (Updated)
         const idxMonth = getCol('ธุรกรรมเดือน') > -1 ? getCol('ธุรกรรมเดือน') : getCol('รายการเดือน'); 
         const idxType = getCol('ประเภทบัญชี');
         const idxBank = getCol('ธนาคาร');
@@ -331,11 +380,10 @@ export default function App() {
         const idxLimitUsed = getCol('วงเงินที่ใช้ไป');
         const idxLimitRem = getCol('วงเงินคงเหลือ');
         const idxLimitTotal = getCol('วงเงินทั้งหมด');
-        const idxDebt = getCol('ภาระหนี้'); // New column
+        const idxDebt = getCol('ภาระหนี้');
         const idxStatement = getCol('วันสรุปยอด');
         const idxDue = getCol('กำหนดชำระ');
         
-        // Chunking Batches (Firebase Limit 500)
         let batch = writeBatch(db);
         let opCount = 0;
         let accCount = 0, txCount = 0;
@@ -373,7 +421,6 @@ export default function App() {
           const accKey = `${bank}-${name}`.trim();
           let accId = existingAccounts.get(accKey) || newAccountsCache.get(accKey);
 
-          // Update/Create Account
           if (name && name !== 'N/A') {
              const accData: any = {
                name, bank, type,
@@ -384,17 +431,13 @@ export default function App() {
                updatedAt: serverTimestamp()
              };
 
-             // Debt Mapping
              if (debt > 0) accData.totalDebt = debt;
 
-             // Balance/Limit Logic
              if (type === 'credit') {
-               // ✅ FIX: Use 0 instead of undefined
                accData.limit = limitTotal > 0 ? limitTotal : 0; 
-               
                if (limitRem > 0) accData.balance = limitRem;
                else if (limitTotal > 0 && limitUsed > 0) accData.balance = limitTotal - limitUsed;
-               else if (typeof accData.balance === 'undefined') accData.balance = 0; // Ensure not undefined
+               else if (typeof accData.balance === 'undefined') accData.balance = 0; 
              } else {
                if (balance > 0) accData.balance = balance;
                else if (typeof accData.balance === 'undefined') accData.balance = 0;
@@ -412,7 +455,6 @@ export default function App() {
              opCount++;
           }
 
-          // Create Transaction
           const desc = clean(idxDesc);
           const amount = parseNum(idxAmount);
           const monthStr = clean(idxMonth);
@@ -437,7 +479,6 @@ export default function App() {
              opCount++;
           }
 
-          // Check Batch Limit
           if (opCount >= 400) await commitBatch();
         }
 
@@ -486,26 +527,18 @@ export default function App() {
   };
 
   const handleClearAll = async () => {
-    if (!confirm('ล้างข้อมูลทั้งหมด?')) return;
+    if (!user || !confirm('ล้างข้อมูลทั้งหมด?')) return;
     setLoading(true);
-    // Chunking Delete
-    const batchSize = 400;
-    const allAcc = accounts.map(a => doc(db, 'artifacts', appId, 'users', user.uid, 'accounts', a.id));
-    const allTx = transactions.map(t => doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', t.id));
-    const allDocs = [...allAcc, ...allTx];
-
-    for (let i = 0; i < allDocs.length; i += batchSize) {
-      const batch = writeBatch(db);
-      allDocs.slice(i, i + batchSize).forEach(ref => batch.delete(ref));
-      await batch.commit();
-    }
+    const batch = writeBatch(db);
+    accounts.forEach(a => batch.delete(doc(db, 'artifacts', appId, 'users', user.uid, 'accounts', a.id)));
+    transactions.forEach(t => batch.delete(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', t.id)));
+    await batch.commit();
     setLoading(false);
     alert('ล้างข้อมูลเรียบร้อย');
   };
 
   // --- Views ---
 
-  // Fix SettingsView White Screen: Simplified Rendering
   const SettingsView = () => (
     <div className="pt-4 px-1">
       <h2 className="text-2xl font-bold mb-6">ตั้งค่า</h2>
@@ -520,17 +553,26 @@ export default function App() {
            <ChevronRight size={20} className="text-slate-300"/>
         </button>
         
-        <button onClick={handleClearAll} className="w-full p-4 flex items-center gap-4 hover:bg-rose-50 group text-left">
+        <button onClick={handleClearAll} className="w-full p-4 flex items-center gap-4 hover:bg-rose-50 group text-left border-b border-slate-50">
            <div className="w-10 h-10 bg-rose-50 rounded-full flex items-center justify-center text-rose-600 group-hover:bg-rose-200"><Trash2 size={20}/></div>
            <div className="flex-1">
              <p className="font-bold text-rose-600">ล้างข้อมูลทั้งหมด</p>
              <p className="text-xs text-slate-400">ลบบัญชีและรายการทั้งหมด (กู้คืนไม่ได้)</p>
            </div>
         </button>
+
+        <button onClick={handleLogout} className="w-full p-4 flex items-center gap-4 hover:bg-slate-50 group text-left">
+           <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-600 group-hover:bg-slate-200"><LogOut size={20}/></div>
+           <div className="flex-1">
+             <p className="font-bold text-slate-800">ออกจากระบบ</p>
+             <p className="text-xs text-slate-400">ลงชื่อออก (Sign Out)</p>
+           </div>
+        </button>
       </div>
 
       <div className="mt-8 text-center text-xs text-slate-300">
-        User: {user?.uid?.slice(0, 8) || 'Guest'}
+        User: {user?.email || 'Anonymous'} <br/>
+        ID: {user?.uid?.slice(0, 8)}
       </div>
     </div>
   );
@@ -837,7 +879,9 @@ export default function App() {
     );
   };
 
-  if (loading) return <div className="h-screen flex items-center justify-center text-slate-400 bg-slate-50">Loading...</div>;
+  if (authLoading) return <div className="h-screen flex items-center justify-center text-slate-400 bg-slate-50">Loading Auth...</div>;
+
+  if (!user) return <LoginScreen onLogin={handleLogin} />;
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans text-slate-900 flex justify-center">
@@ -846,7 +890,9 @@ export default function App() {
         {/* Top Bar */}
         <div className="px-6 pt-12 pb-2 bg-white flex justify-between items-center shrink-0 z-20">
            <div className="flex items-center gap-3">
-             <div className="w-10 h-10 bg-slate-900 rounded-full flex items-center justify-center text-white font-bold">ME</div>
+             <div className="w-10 h-10 bg-slate-900 rounded-full flex items-center justify-center text-white font-bold">
+               {user.email ? user.email.charAt(0).toUpperCase() : 'ME'}
+             </div>
              <div>
                <p className="text-[10px] text-slate-400 uppercase tracking-wider">Financial Manager</p>
                <p className="font-bold text-lg">My Balance</p>
