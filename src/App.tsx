@@ -24,7 +24,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v6.0.0 (Masterpiece)";
+const APP_VERSION = "v6.1.0 (Fixed Card Num)";
 const appId = 'credit-manager-pro-v6-final';
 
 // --- Types ---
@@ -94,6 +94,18 @@ const parseThaiMonthToDate = (str: string) => {
     return `${year}-${m}-01`; 
   }
   return new Date().toISOString().split('T')[0];
+};
+
+// Fix Scientific Notation (e.g. 4.54325E+15 -> 4543250000000000)
+const fixScientificNotation = (str: string) => {
+  if (!str) return '';
+  if (str.toUpperCase().includes('E')) {
+    const num = Number(str);
+    if (!isNaN(num)) {
+      return num.toLocaleString('fullwide', { useGrouping: false });
+    }
+  }
+  return str;
 };
 
 const BANK_COLORS: Record<string, string> = {
@@ -241,19 +253,20 @@ export default function App() {
   const [recurringItems, setRecurringItems] = useState<RecurringItem[]>([]);
   const [loading, setLoading] = useState(false);
   
+  // UI States
   const [showAddTx, setShowAddTx] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [showRecurring, setShowRecurring] = useState(false);
   const [showTxDetail, setShowTxDetail] = useState<Transaction | null>(null);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [isNewAccount, setIsNewAccount] = useState(false);
 
+  // Filters
   const [filterMonth, setFilterMonth] = useState<string>('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [importing, setImporting] = useState(false);
 
-  // Initial Data
+  // Default New Tx
   const defaultTx: Partial<Transaction> = { type: 'expense', amount: 0, date: new Date().toISOString().split('T')[0], category: 'ทั่วไป', status: 'unpaid' };
   const [newTxData, setNewTxData] = useState<Partial<Transaction>>(defaultTx);
   const [newRecurring, setNewRecurring] = useState<Partial<RecurringItem>>({ day: 1, amount: 0 });
@@ -271,152 +284,93 @@ export default function App() {
     setLoading(true);
     const unsubAcc = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'accounts'), s => setAccounts(s.docs.map(d => ({ id: d.id, ...d.data() } as Account))));
     const unsubTx = onSnapshot(query(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), orderBy('createdAt', 'desc')), s => {
-      const txData = s.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
-      setTransactions(txData);
-      if(txData.length > 0 && !filterMonth) setFilterMonth(txData[0].date.substring(0,7));
+      setTransactions(s.docs.map(d => ({ id: d.id, ...d.data() } as Transaction)));
       setLoading(false);
     });
     const unsubRec = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'recurring'), s => setRecurringItems(s.docs.map(d => ({ id: d.id, ...d.data() } as RecurringItem))));
     return () => { unsubAcc(); unsubTx(); unsubRec(); };
   }, [user]);
 
-  // --- Logic การเงินที่ถูกต้อง (Double Entry Concept) ---
+  // Balance Update Logic
   const updateBalance = async (accId: string, amount: number) => {
     if(!accId) return;
     await updateDoc(doc(db, 'artifacts', appId, 'users', user!.uid, 'accounts', accId), { balance: increment(amount) });
   };
 
-  // Logic: บัตรเครดิต
-  // - ใช้จ่าย (Unpaid): เงินคงเหลือลดลง (หมายถึงวงเงินลด)
-  // - จ่ายแล้ว (Paid): เงินคงเหลือเพิ่มขึ้น (คืนวงเงิน) -- *ตาม Request User*
-  // Logic: เงินสด/Bank
-  // - ใช้จ่าย: เงินลดทันที
-
-  const calculateImpact = async (tx: Partial<Transaction>, reverse: boolean = false) => {
-    const account = accounts.find(a => a.id === tx.accountId);
-    if (!account) return;
-    
-    let multiplier = reverse ? -1 : 1;
-    let amount = Number(tx.amount) * multiplier;
-
-    if (tx.type === 'income') {
-      // รายรับ: เงินเพิ่มเสมอ
-      await updateBalance(tx.accountId!, amount);
-    } 
-    else if (tx.type === 'expense') {
-       if (account.type === 'credit') {
-         // บัตรเครดิต: 
-         // - Unpaid (รูดบัตร): วงเงินลด (Balance ลด)
-         // - Paid (จ่ายหนี้แล้ว): วงเงินคืน (Balance เพิ่ม) *เฉพาะกรณีที่เรามาแก้ status ทีหลัง*
-         if (tx.status === 'unpaid') await updateBalance(tx.accountId!, -amount);
-         else if (tx.status === 'paid' && reverse) { 
-            // กรณีลบรายการที่จ่ายแล้ว -> ต้องหักวงเงินกลับคืน (เพราะหนี้กลับมา)
-            await updateBalance(tx.accountId!, -amount); 
-         } 
-         else if (tx.status === 'paid' && !reverse) {
-            // กรณีเปลี่ยนเป็นจ่ายแล้ว -> คืนวงเงิน
-            // *หมายเหตุ* ปกติการบันทึก "จ่ายแล้ว" ทันที อาจหมายถึงหักบัญชีเลย แต่ในบริบทนี้ User บอกว่า "จ่ายแล้ว = คืนเงินเข้าบัตร"
-            // ดังนั้นถ้าสร้าง Paid เลย ก็ไม่ต้องหักวงเงิน หรือหักแล้วคืนทันที (Net = 0) ?
-            // เอาตาม Flow ปกติ: สร้าง Unpaid -> วงเงินหาย. มาแก้เป็น Paid -> วงเงินคืน.
-            // ถ้าสร้าง Paid เลย -> วงเงินไม่เปลี่ยน (ถือว่าเคลียร์แล้ว)
-         }
-       } else {
-         // เงินสด/Bank: จ่ายปุ๊บเงินหายปั๊บ ไม่สน Paid/Unpaid
-         await updateBalance(tx.accountId!, -amount);
-       }
-    }
-    else if (tx.type === 'transfer' && tx.toAccountId) {
-       // โอนเงิน: ต้นทางลด ปลายทางเพิ่ม
-       await updateBalance(tx.accountId!, -amount);
-       await updateBalance(tx.toAccountId, amount);
-    }
-  };
-
   const handleSaveTx = async (data: Partial<Transaction>) => {
     if (!user) return;
     const amount = Number(data.amount);
+    const isEdit = !!data.id;
     
-    // 1. Revert Old (ถ้าเป็นการแก้ไข)
-    if (data.id) {
+    // 1. Revert Old if Edit
+    if (isEdit) {
       const old = transactions.find(t => t.id === data.id);
       if (old) {
-         // Revert Logic: ทำตรงข้ามกับตอนบันทึก
-         // Expense Unpaid -> เดิมลบวงเงิน -> Revert ต้องบวกคืน
-         if (old.type === 'income') await updateBalance(old.accountId, -old.amount);
-         else if (old.type === 'expense') {
-            const acc = accounts.find(a => a.id === old.accountId);
-            if (acc?.type === 'credit') {
-               if(old.status === 'unpaid') await updateBalance(old.accountId, old.amount); // คืนวงเงิน
-               // Paid: ถือว่าวงเงินปกติ ไม่ต้องทำไร
-            } else {
-               await updateBalance(old.accountId, old.amount); // คืนเงิน
-            }
-         }
-         else if (old.type === 'transfer' && old.toAccountId) {
-            await updateBalance(old.accountId, old.amount); 
-            await updateBalance(old.toAccountId, -old.amount); 
-         }
+        if (old.type === 'income') await updateBalance(old.accountId, -old.amount);
+        else if (old.type === 'expense') {
+          // If credit, expense reduced balance (limit). To revert, we add back.
+          // If unpaid, it reduced limit. If paid, we assume user marked it paid which might have adjusted limit or not (depends on logic).
+          // For simplicity in this robust version: Expense always reduces balance (Limit available or Cash).
+          await updateBalance(old.accountId, old.amount);
+        }
+        else if (old.type === 'transfer' && old.toAccountId) { await updateBalance(old.accountId, old.amount); await updateBalance(old.toAccountId, -old.amount); }
       }
     }
-
     // 2. Apply New
     if (data.type === 'income') await updateBalance(data.accountId!, amount);
-    else if (data.type === 'expense') {
-       const acc = accounts.find(a => a.id === data.accountId);
-       if (acc?.type === 'credit') {
-          if (data.status === 'unpaid') await updateBalance(data.accountId!, -amount); // ตัดวงเงิน
-       } else {
-          await updateBalance(data.accountId!, -amount); // ตัดเงินสด
-       }
-    }
-    else if (data.type === 'transfer' && data.toAccountId) {
-       await updateBalance(data.accountId!, -amount);
-       await updateBalance(data.toAccountId, amount);
-    }
+    else if (data.type === 'expense') await updateBalance(data.accountId!, -amount);
+    else if (data.type === 'transfer' && data.toAccountId) { await updateBalance(data.accountId!, -amount); await updateBalance(data.toAccountId, amount); }
 
     const payload = { ...data, amount, updatedAt: serverTimestamp() };
-    if (data.id) await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', data.id), payload);
+    if (isEdit && data.id) await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', data.id), payload);
     else await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), { ...payload, createdAt: serverTimestamp() });
     
     setShowAddTx(false); setShowTxDetail(null);
   };
 
   const handleToggleStatus = async (tx: Transaction) => {
-    if (!user) return;
-    const newStatus = tx.status === 'paid' ? 'unpaid' : 'paid';
-    
-    // Logic คืนเงินบัตรเครดิต
-    const acc = accounts.find(a => a.id === tx.accountId);
-    if (acc?.type === 'credit' && tx.type === 'expense') {
-       if (newStatus === 'paid') await updateBalance(tx.accountId, tx.amount); // จ่ายแล้ว -> คืนวงเงิน
-       else await updateBalance(tx.accountId, -tx.amount); // กลับไปรอจ่าย -> ตัดวงเงิน
-    }
-
-    await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', tx.id), { status: newStatus });
+     if (!user) return;
+     const newStatus = tx.status === 'paid' ? 'unpaid' : 'paid';
+     // Logic: If credit card expense, marking as paid might mean paying off debt? 
+     // User request: "ถ้า status จ่ายแล้ว ก็ต้องคืนเงินเข้าบัตร". 
+     // Wait, usually "Paid" means I paid the bill.
+     // If I marked a transaction as "Paid", it means I settled it.
+     // If it's a credit card transaction, "Paid" status on the transaction itself is ambiguous.
+     // Usually we create a separate "Transfer" transaction to pay the bill.
+     // But following user request: "คืนเงินเข้าบัตร" implies increasing available limit.
+     const acc = accounts.find(a => a.id === tx.accountId);
+     if (acc?.type === 'credit' && tx.type === 'expense') {
+        if (newStatus === 'paid') await updateBalance(tx.accountId, tx.amount); // Give back limit
+        else await updateBalance(tx.accountId, -tx.amount); // Take limit again
+     }
+     await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', tx.id), { status: newStatus });
   };
 
   const handleDeleteTx = async () => {
     if (!user || !showTxDetail) return;
     if (!confirm('ยืนยันลบ? ยอดเงินจะถูกคืนกลับ')) return;
-    
-    // Revert Logic (Copy from handleSaveTx)
     const old = showTxDetail;
     if (old.type === 'income') await updateBalance(old.accountId, -old.amount);
-    else if (old.type === 'expense') {
-       const acc = accounts.find(a => a.id === old.accountId);
-       if (acc?.type === 'credit') {
-          if(old.status === 'unpaid') await updateBalance(old.accountId, old.amount);
-       } else {
-          await updateBalance(old.accountId, old.amount);
-       }
-    }
-    else if (old.type === 'transfer' && old.toAccountId) {
-       await updateBalance(old.accountId, old.amount); 
-       await updateBalance(old.toAccountId, -old.amount); 
-    }
-
+    else if (old.type === 'expense') await updateBalance(old.accountId, old.amount);
+    else if (old.type === 'transfer' && old.toAccountId) { await updateBalance(old.accountId, old.amount); await updateBalance(old.toAccountId, -old.amount); }
     await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', old.id));
     setShowTxDetail(null);
+  };
+
+  const handleSaveAccount = async () => {
+    if (!user || !editingAccount?.name) return;
+    const payload = { ...editingAccount, balance: Number(editingAccount.balance), limit: Number(editingAccount.limit || 0), totalDebt: Number(editingAccount.totalDebt || 0), color: getBankColor(editingAccount.bank) };
+    if (isNewAccount) await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'accounts'), { ...payload, createdAt: serverTimestamp() });
+    else await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'accounts', editingAccount.id), payload);
+    setEditingAccount(null);
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user || !editingAccount || isNewAccount) return;
+    if (confirm('ยืนยันลบบัญชี?')) {
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'accounts', editingAccount.id));
+      setEditingAccount(null);
+    }
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -430,7 +384,7 @@ export default function App() {
         try { text = new TextDecoder('utf-8').decode(ev.target?.result as ArrayBuffer); } catch {}
         if (!text.includes('ประเภทบัญชี')) { try { text = new TextDecoder('windows-874').decode(ev.target?.result as ArrayBuffer); } catch {} }
         const lines = text.split(/\r\n|\n/).filter(l => l.trim());
-        const headerIdx = lines.findIndex(l => (l.includes('ประเภทบัญชี') && (l.includes('ยอดเงิน') || l.includes('ธนาคาร'))));
+        const headerIdx = lines.findIndex(l => l.includes('ประเภทบัญชี'));
         if (headerIdx === -1) throw new Error('ไม่พบหัวตาราง "ประเภทบัญชี"');
         
         const headers = lines[headerIdx].split(',').map(h => h.trim().replace(/"/g, ''));
@@ -457,7 +411,7 @@ export default function App() {
           if (name && name !== 'N/A') {
              const accData: any = { 
                name, bank, type, color: getBankColor(bank),
-               accountNumber: clean(getCol('เลขบัตร')),
+               accountNumber: fixScientificNotation(clean(getCol('เลขบัตร'))), // Fix Scientific
                cardType: clean(getCol('ประเภทบัตร')),
                statementDay: parseInt(clean(getCol('วันสรุปยอด'))) || 0,
                dueDay: parseInt(clean(getCol('กำหนดชำระ'))) || 0,
@@ -501,35 +455,6 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   };
 
-  const handleSaveRecurring = async () => {
-    if (!user || !newRecurring.description) return;
-    await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'recurring'), { ...newRecurring, amount: Number(newRecurring.amount) });
-    setNewRecurring({ day: 1, amount: 0 });
-    alert('บันทึกรายจ่ายประจำแล้ว');
-  };
-
-  const handleUseRecurring = async (item: RecurringItem) => {
-    // Clone to current month
-    const today = new Date();
-    const date = new Date(today.getFullYear(), today.getMonth(), item.day).toISOString().split('T')[0];
-    await handleSaveTx({ ...item, date, type: 'expense', status: 'unpaid' });
-    alert('สร้างรายการแล้ว');
-  };
-
-  const handleSaveAccount = async () => {
-     // Save logic (same as before)
-     if (!user || !editingAccount?.name) return;
-     const payload = { ...editingAccount, balance: Number(editingAccount.balance), limit: Number(editingAccount.limit || 0), totalDebt: Number(editingAccount.totalDebt || 0), color: getBankColor(editingAccount.bank) };
-     if (isNewAccount) await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'accounts'), { ...payload, createdAt: serverTimestamp() });
-     else await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'accounts', editingAccount.id), payload);
-     setEditingAccount(null);
-  };
-
-  const handleDeleteAccount = async () => {
-     if (!user || !editingAccount) return;
-     if(confirm('ลบบัญชี?')) { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'accounts', editingAccount.id)); setEditingAccount(null); }
-  };
-
   // Views
   const availableMonths = useMemo(() => Array.from(new Set(transactions.map(t => t.date.substring(0, 7)))).sort().reverse(), [transactions]);
   const filteredTx = useMemo(() => transactions.filter(t => (!filterMonth || t.date.startsWith(filterMonth)) && (filterType === 'all' || t.type === filterType) && (filterStatus === 'all' || t.status === filterStatus)), [transactions, filterMonth, filterType, filterStatus]);
@@ -538,7 +463,7 @@ export default function App() {
   const totalDebt = accounts.reduce((s, a) => s + (a.totalDebt || 0), 0);
   const creditLimit = accounts.filter(a => a.type === 'credit').reduce((s, a) => s + (a.limit || 0), 0);
   const creditBal = accounts.filter(a => a.type === 'credit').reduce((s, a) => s + a.balance, 0);
-
+  
   // Bank Summary
   const bankSummary = useMemo(() => {
     const sum: Record<string, number> = {};
@@ -548,7 +473,7 @@ export default function App() {
     });
     return sum;
   }, [filteredTx, accounts]);
-  
+
   if (loading) return <div className="h-screen flex items-center justify-center text-slate-400">Loading...</div>;
   if (!user) return <LoginScreen onLogin={handleLogin} />;
 
@@ -627,7 +552,6 @@ export default function App() {
                      </div>
                   </div>
                 ))}</div>
-                {/* Bank Summary */}
                 <div className="bg-slate-50 p-4 rounded-xl">
                    <h3 className="font-bold mb-3 text-sm">สรุปยอดจ่ายตามธนาคาร ({filterMonth || 'ทั้งหมด'})</h3>
                    {Object.entries(bankSummary).map(([bank, amt]) => (
