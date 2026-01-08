@@ -24,7 +24,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v6.2.0 (CSV Fix)";
+const APP_VERSION = "v6.3.0 (Logic Fix)";
 const appId = 'credit-manager-pro-v6-final';
 
 // --- Types ---
@@ -36,10 +36,10 @@ interface Account {
   bank: string;
   type: AccountType;
   accountNumber?: string;
-  cardType?: string;     // Visa, MasterCard
+  cardType?: string;     
   limit?: number;        // Total Limit
   balance: number;       // Cash Balance OR Remaining Limit
-  usedLimit?: number;    // For Credit: Amount used
+  usedLimit?: number;    // For Credit: Amount used (Imported)
   totalDebt?: number;    // External Debt Burden
   statementDay?: number;
   dueDay?: number;
@@ -65,7 +65,7 @@ interface RecurringItem {
   amount: number;
   accountId: string;
   category: string;
-  day: number; // Day of month
+  day: number;
 }
 
 // --- Helpers ---
@@ -77,7 +77,6 @@ const getThaiMonthName = (dateStr: string) => {
   return isNaN(date.getTime()) ? dateStr : date.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
 };
 
-// Parser
 const parseThaiMonthToDate = (str: string) => {
   if (!str) return new Date().toISOString().split('T')[0];
   const parts = str.trim().split(/[-/]/); 
@@ -96,15 +95,11 @@ const parseThaiMonthToDate = (str: string) => {
   return new Date().toISOString().split('T')[0];
 };
 
-// Fix Scientific Notation (e.g. 4.54325E+15 -> 4543250000000000)
 const fixScientificNotation = (str: string) => {
   if (!str) return '';
-  // Check for E notation or simple large number string
   if (str.toUpperCase().includes('E') || str.includes('+')) {
     const num = Number(str);
-    if (!isNaN(num)) {
-      return num.toLocaleString('fullwide', { useGrouping: false });
-    }
+    if (!isNaN(num)) return num.toLocaleString('fullwide', { useGrouping: false });
   }
   return str;
 };
@@ -157,16 +152,14 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
         <p className="text-xs opacity-70">{account.type === 'credit' ? 'วงเงินคงเหลือ' : 'ยอดเงินในบัญชี'}</p>
         <p className="text-xl font-bold">{formatCurrency(account.balance)}</p>
       </div>
-      {account.type === 'credit' && (
+      {account.type === 'credit' && account.limit && account.limit > 0 && (
         <>
-          {account.limit && account.limit > 0 && (
-             <div className="w-full bg-black/20 h-1.5 rounded-full overflow-hidden mt-1">
-                <div className="bg-white h-full" style={{ width: `${Math.min(((account.limit - account.balance) / account.limit) * 100, 100)}%` }}></div>
-             </div>
-          )}
+          <div className="w-full bg-black/20 h-1.5 rounded-full overflow-hidden mt-1">
+             <div className="bg-white h-full" style={{ width: `${Math.min(((account.limit - account.balance) / account.limit) * 100, 100)}%` }}></div>
+          </div>
           <div className="flex justify-between text-[10px] opacity-60 pt-1">
-             <span>ใช้ไป: {formatCurrency((account.limit || 0) - account.balance)}</span>
-             <span>วงเงิน: {formatCurrency(account.limit || 0)}</span>
+             <span>ใช้ไป: {formatCurrency(account.limit - account.balance)}</span>
+             <span>วงเงิน: {formatCurrency(account.limit)}</span>
           </div>
           {(account.statementDay || account.dueDay) && (
              <div className="flex gap-2 text-[9px] opacity-50 mt-1">
@@ -230,7 +223,7 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
         </div>
       )}
       <div className="space-y-3">
-         <input type="text" placeholder="รายละเอียด" className="w-full p-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-slate-900" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+         <input type="text" placeholder="รายละเอียด (เช่น ค่ากาแฟ)" className="w-full p-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-slate-900" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
          <div className="flex gap-3">
            <input type="date" className="flex-1 p-3 rounded-xl border border-slate-200 text-sm text-center bg-white" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
            {formData.type === 'expense' && <select className={`flex-1 p-3 rounded-xl border border-slate-200 text-sm text-center font-bold ${formData.status === 'paid' ? 'text-emerald-600 bg-emerald-50' : 'text-amber-600 bg-amber-50'}`} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as any })}><option value="paid">จ่ายแล้ว</option><option value="unpaid">รอจ่าย</option></select>}
@@ -247,7 +240,6 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
 // --- Main Application ---
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'wallet' | 'transactions' | 'settings'>('dashboard');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -264,6 +256,7 @@ export default function App() {
   // Filters
   const [filterMonth, setFilterMonth] = useState<string>('');
   const [filterType, setFilterType] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
   const [importing, setImporting] = useState(false);
 
   // Default New Tx
@@ -272,7 +265,7 @@ export default function App() {
   const [newRecurring, setNewRecurring] = useState<Partial<RecurringItem>>({ day: 1, amount: 0 });
 
   useEffect(() => {
-    return onAuthStateChanged(auth, u => { setUser(u); setAuthLoading(false); });
+    return onAuthStateChanged(auth, u => { setUser(u); });
   }, []);
 
   const handleLogin = async () => {
@@ -307,9 +300,7 @@ export default function App() {
       const old = transactions.find(t => t.id === data.id);
       if (old) {
         if (old.type === 'income') await updateBalance(old.accountId, -old.amount);
-        else if (old.type === 'expense') {
-          await updateBalance(old.accountId, old.amount);
-        }
+        else if (old.type === 'expense') await updateBalance(old.accountId, old.amount);
         else if (old.type === 'transfer' && old.toAccountId) { await updateBalance(old.accountId, old.amount); await updateBalance(old.toAccountId, -old.amount); }
       }
     }
@@ -394,7 +385,10 @@ export default function App() {
           const name = clean(getCol('ชื่อบัตร')) || 'General';
           const bank = clean(getCol('ธนาคาร')) || 'Other';
           const typeRaw = clean(getCol('ประเภทบัญชี'));
-          const type = (typeRaw.includes('บัญชี') || bank.includes('ธนาคาร')) ? 'bank' : typeRaw.includes('เงินสด') ? 'cash' : 'credit';
+          // Fix logic: If balance > 0, treat as Bank
+          const balanceVal = num(getCol('ยอดเงินในบัญชี'));
+          let type: AccountType = (typeRaw.includes('บัญชี') || bank.includes('ธนาคาร') || balanceVal > 0) ? 'bank' : typeRaw.includes('เงินสด') ? 'cash' : 'credit';
+          
           const key = `${bank}-${name}`;
           
           let accId = existing.get(key) || newCache.get(key);
@@ -407,21 +401,23 @@ export default function App() {
                dueDay: parseInt(clean(getCol('กำหนดชำระ'))) || 0,
                totalDebt: num(getCol('ภาระหนี้'))
              };
-             // FIX: Default undefined to 0 to prevent Firebase Error
-             accData.limit = num(getCol('วงเงินทั้งหมด')) || 0;
+             
+             // Fix Double Debt Logic: Recalculate Balance from Limit - Used
+             const limitTotal = num(getCol('วงเงินทั้งหมด'));
+             const limitUsed = num(getCol('วงเงินที่ใช้ไป'));
+
              if (type === 'credit') { 
-                const limitRem = num(getCol('วงเงินคงเหลือ'));
-                const limitUsed = num(getCol('วงเงินที่ใช้ไป'));
-                accData.balance = limitRem > 0 ? limitRem : (accData.limit - limitUsed);
+                accData.limit = limitTotal; 
+                // ถ้าใน CSV บอกว่าใช้ไป 0 ให้ถือว่าวงเงินคงเหลือ = วงเงินทั้งหมด
+                accData.balance = limitUsed > 0 ? (limitTotal - limitUsed) : limitTotal; 
              } else {
-                accData.balance = num(getCol('ยอดเงินในบัญชี'));
+                accData.balance = balanceVal;
              }
-             if (isNaN(accData.balance)) accData.balance = 0;
              
              if (accId) batch.update(doc(db, 'artifacts', appId, 'users', user.uid, 'accounts', accId), accData);
              else {
                const ref = doc(collection(db, 'artifacts', appId, 'users', user.uid, 'accounts'));
-               batch.set(ref, { ...accData, createdAt: serverTimestamp() });
+               batch.set(ref, { ...accData, balance: accData.balance||0, limit: accData.limit||0, totalDebt: accData.totalDebt||0, createdAt: serverTimestamp() });
                accId = ref.id; newCache.set(key, accId);
              }
              count++;
@@ -463,9 +459,20 @@ export default function App() {
     alert('สร้างรายการแล้ว');
   };
 
+  const handleClearAll = async () => {
+    if (!confirm('ล้างข้อมูลทั้งหมด?')) return;
+    setLoading(true);
+    const batch = writeBatch(db);
+    accounts.forEach(a => batch.delete(doc(db, 'artifacts', appId, 'users', user!.uid, 'accounts', a.id)));
+    transactions.forEach(t => batch.delete(doc(db, 'artifacts', appId, 'users', user!.uid, 'transactions', t.id)));
+    await batch.commit();
+    setLoading(false);
+    alert('ล้างข้อมูลเรียบร้อย');
+  };
+
   // Views
   const availableMonths = useMemo(() => Array.from(new Set(transactions.map(t => t.date.substring(0, 7)))).sort().reverse(), [transactions]);
-  const filteredTx = useMemo(() => transactions.filter(t => (!filterMonth || t.date.startsWith(filterMonth)) && (filterType === 'all' || t.type === filterType)), [transactions, filterMonth, filterType]);
+  const filteredTx = useMemo(() => transactions.filter(t => (!filterMonth || t.date.startsWith(filterMonth)) && (filterType === 'all' || t.type === filterType) && (filterStatus === 'all' || t.status === filterStatus)), [transactions, filterMonth, filterType, filterStatus]);
   
   const totalAssets = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0);
   const totalDebt = accounts.reduce((s, a) => s + (a.totalDebt || 0), 0);
@@ -508,8 +515,8 @@ export default function App() {
                    </div>
                    <h1 className="text-4xl font-bold">{formatCurrency(totalAssets - (creditLimit - creditBal) - totalDebt)}</h1>
                    <div className="grid grid-cols-2 gap-4 mt-6">
-                      <div className="bg-white/10 p-3 rounded-xl"><p className="text-[10px] text-emerald-300">สินทรัพย์</p><p className="text-lg font-bold">{formatCurrency(totalAssets)}</p></div>
-                      <div className="bg-white/10 p-3 rounded-xl"><p className="text-[10px] text-rose-300">หนี้สิน</p><p className="text-lg font-bold">{formatCurrency((creditLimit - creditBal) + totalDebt)}</p></div>
+                      <div className="bg-white/10 p-3 rounded-xl"><p className="text-[10px] text-emerald-300">สินทรัพย์ (เงินสด)</p><p className="text-lg font-bold">{formatCurrency(totalAssets)}</p></div>
+                      <div className="bg-white/10 p-3 rounded-xl"><p className="text-[10px] text-rose-300">หนี้สินรวม (บัตร+ภาระ)</p><p className="text-lg font-bold">{formatCurrency((creditLimit - creditBal) + totalDebt)}</p></div>
                    </div>
                 </div>
                 {/* Recurring Quick Actions */}
@@ -545,6 +552,7 @@ export default function App() {
                 <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
                    <select className="bg-white border rounded text-xs p-2 min-w-[100px]" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}><option value="">ทุกเดือน</option>{availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m+'-01')}</option>)}</select>
                    <select className="bg-white border rounded text-xs p-2" value={filterType} onChange={e => setFilterType(e.target.value)}><option value="all">ทุกประเภท</option><option value="expense">รายจ่าย</option><option value="income">รายรับ</option></select>
+                   <select className="bg-white border rounded text-xs p-2" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">ทุกสถานะ</option><option value="paid">จ่ายแล้ว</option><option value="unpaid">รอจ่าย</option></select>
                 </div>
                 <div className="space-y-2 mb-8">{filteredTx.map(tx => (
                   <div key={tx.id} onClick={() => { setNewTxData(tx); setShowTxDetail(tx); }} className="bg-white p-4 border rounded-xl flex justify-between items-center cursor-pointer relative overflow-hidden">
@@ -592,6 +600,7 @@ export default function App() {
                       </div>
                    </div>
                    <button onClick={() => setShowImport(true)} className="w-full p-4 bg-white border rounded-xl flex items-center gap-3"><Upload size={20}/> นำเข้า CSV</button>
+                   <button onClick={handleClearAll} className="w-full p-4 bg-rose-50 text-rose-600 rounded-xl flex items-center gap-3"><Trash2 size={20}/> ล้างข้อมูลทั้งหมด</button>
                    <button onClick={() => signOut(auth)} className="w-full p-4 bg-slate-100 rounded-xl flex items-center gap-3"><LogOut size={20}/> ออกจากระบบ</button>
                 </div>
                 <p className="text-center text-xs text-slate-300 mt-8">{APP_VERSION}</p>
