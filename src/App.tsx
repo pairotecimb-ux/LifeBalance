@@ -24,8 +24,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v5.2.2 (Fixed)";
-const appId = 'credit-manager-pro-v5-master'; // ✅ Added missing appId
+const APP_VERSION = "v5.3.0 (Complete Fix)";
+const appId = 'credit-manager-pro-v5-master';
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -142,6 +142,11 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
 
   const banks = useMemo(() => Array.from(new Set(accounts.map(a => a.bank))).sort(), [accounts]);
   const filteredAccounts = useMemo(() => accounts.filter(a => (!selectedBank || a.bank === selectedBank) && (!selectedType || a.type === selectedType)), [accounts, selectedBank, selectedType]);
+
+  const handleSubmit = () => {
+    if(!formData.amount || !formData.accountId) return alert('กรุณากรอกข้อมูลให้ครบ');
+    onSave(formData);
+  };
 
   return (
     <div className="space-y-5 pb-10">
@@ -336,8 +341,6 @@ export default function App() {
              }
              count++;
           }
-          // Tx logic omitted for brevity in strict fix mode, assuming account sync is priority or add back if needed.
-          // Re-adding Tx Logic for completeness as requested "Import working":
           const desc = clean(getCol('รายละเอียดค่าใช้จ่าย'));
           const amt = num(getCol('ยอดชำระ'));
           if (accId && desc && desc !== 'ไม่มี' && amt > 0) {
@@ -373,8 +376,8 @@ export default function App() {
   if (!user) return <div className="h-screen flex items-center justify-center"><button onClick={() => signInWithPopup(auth, new GoogleAuthProvider())}>Login Google</button></div>;
 
   return (
-    <div className="min-h-screen bg-slate-100 font-sans text-slate-900 flex justify-center">
-      <div className="w-full max-w-md bg-white sm:my-8 sm:rounded-[2.5rem] sm:shadow-2xl sm:border-[8px] sm:border-slate-800 flex flex-col relative overflow-hidden h-[100dvh] sm:h-[850px]">
+    <div className="h-screen bg-slate-100 font-sans text-slate-900 flex flex-col items-center justify-center overflow-hidden">
+      <div className="w-full max-w-md bg-white sm:my-8 sm:rounded-[2.5rem] sm:shadow-2xl sm:border-[8px] sm:border-slate-800 flex flex-col relative h-full sm:h-[850px]">
         {/* Header */}
         <div className="px-6 pt-12 pb-2 bg-white flex justify-between items-center shrink-0 z-20">
            <div><p className="text-[10px] text-slate-400 uppercase">My Wallet</p><p className="font-bold text-lg">Dashboard</p></div>
@@ -382,9 +385,9 @@ export default function App() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 hide-scrollbar bg-white relative z-10">
+        <div className="flex-1 overflow-y-auto px-6 hide-scrollbar bg-white relative z-10 pb-24">
            {activeTab === 'dashboard' && (
-             <div className="pb-24 space-y-6">
+             <div className="space-y-6">
                 <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl">
                    <div className="flex justify-between items-center mb-4">
                      <p className="text-xs text-slate-400">ภาพรวม {filterMonth ? getThaiMonthName(filterMonth + '-01') : '(ทั้งหมด)'}</p>
@@ -411,7 +414,7 @@ export default function App() {
              </div>
            )}
            {activeTab === 'wallet' && (
-             <div className="pb-24 pt-4 space-y-6">
+             <div className="pt-4 space-y-6">
                 <div className="flex justify-between items-center"><h2 className="text-2xl font-bold">กระเป๋าตังค์</h2><button onClick={() => { setIsNewAccount(true); setEditingAccount({ id: '', name: '', bank: '', type: 'bank', balance: 0, color: 'from-slate-700 to-slate-900' }); }} className="bg-slate-900 text-white p-2 rounded-full shadow"><Plus size={20}/></button></div>
                 {[...new Set(accounts.map(a => a.bank))].sort().map(bank => (
                   <div key={bank}>
@@ -422,7 +425,7 @@ export default function App() {
              </div>
            )}
            {activeTab === 'transactions' && (
-             <div className="pb-24 pt-4">
+             <div className="pt-4">
                 <div className="flex gap-2 mb-4">
                    <select className="bg-white border rounded text-xs p-2" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}><option value="">ทุกเดือน</option>{availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m+'-01')}</option>)}</select>
                    <select className="bg-white border rounded text-xs p-2" value={filterType} onChange={e => setFilterType(e.target.value)}><option value="all">ทุกประเภท</option><option value="expense">รายจ่าย</option><option value="income">รายรับ</option></select>
@@ -446,6 +449,15 @@ export default function App() {
                 <p className="text-center text-xs text-slate-300 mt-8">{APP_VERSION}</p>
              </div>
            )}
+        </div>
+
+        {/* Bottom Nav (Fixed) */}
+        <div className="absolute bottom-0 w-full bg-white/90 backdrop-blur-md border-t py-3 px-6 flex justify-between items-center z-30 pb-6 sm:pb-3">
+           <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 ${activeTab==='dashboard'?'text-slate-900':'text-slate-400'}`}><LayoutDashboard size={24}/><span className="text-[10px]">ภาพรวม</span></button>
+           <button onClick={() => setActiveTab('wallet')} className={`flex flex-col items-center gap-1 ${activeTab==='wallet'?'text-slate-900':'text-slate-400'}`}><Wallet size={24}/><span className="text-[10px]">กระเป๋า</span></button>
+           <div className="relative -top-6"><button onClick={() => { setNewTxData(defaultTx); setShowAddTx(true); }} className="bg-slate-900 text-white w-14 h-14 rounded-full shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition border-4 border-white"><Plus size={28}/></button></div>
+           <button onClick={() => setActiveTab('transactions')} className={`flex flex-col items-center gap-1 ${activeTab==='transactions'?'text-slate-900':'text-slate-400'}`}><List size={24}/><span className="text-[10px]">รายการ</span></button>
+           <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 ${activeTab==='settings'?'text-slate-900':'text-slate-400'}`}><Settings size={24}/><span className="text-[10px]">ตั้งค่า</span></button>
         </div>
 
         {/* Modals */}
