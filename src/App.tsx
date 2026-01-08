@@ -24,7 +24,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v6.1.0 (Fixed Card Num)";
+const APP_VERSION = "v6.2.0 (CSV Fix)";
 const appId = 'credit-manager-pro-v6-final';
 
 // --- Types ---
@@ -99,7 +99,8 @@ const parseThaiMonthToDate = (str: string) => {
 // Fix Scientific Notation (e.g. 4.54325E+15 -> 4543250000000000)
 const fixScientificNotation = (str: string) => {
   if (!str) return '';
-  if (str.toUpperCase().includes('E')) {
+  // Check for E notation or simple large number string
+  if (str.toUpperCase().includes('E') || str.includes('+')) {
     const num = Number(str);
     if (!isNaN(num)) {
       return num.toLocaleString('fullwide', { useGrouping: false });
@@ -229,7 +230,7 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
         </div>
       )}
       <div className="space-y-3">
-         <input type="text" placeholder="รายละเอียด (เช่น ค่ากาแฟ)" className="w-full p-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-slate-900" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+         <input type="text" placeholder="รายละเอียด" className="w-full p-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-slate-900" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
          <div className="flex gap-3">
            <input type="date" className="flex-1 p-3 rounded-xl border border-slate-200 text-sm text-center bg-white" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
            {formData.type === 'expense' && <select className={`flex-1 p-3 rounded-xl border border-slate-200 text-sm text-center font-bold ${formData.status === 'paid' ? 'text-emerald-600 bg-emerald-50' : 'text-amber-600 bg-amber-50'}`} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as any })}><option value="paid">จ่ายแล้ว</option><option value="unpaid">รอจ่าย</option></select>}
@@ -263,7 +264,6 @@ export default function App() {
   // Filters
   const [filterMonth, setFilterMonth] = useState<string>('');
   const [filterType, setFilterType] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
   const [importing, setImporting] = useState(false);
 
   // Default New Tx
@@ -308,9 +308,6 @@ export default function App() {
       if (old) {
         if (old.type === 'income') await updateBalance(old.accountId, -old.amount);
         else if (old.type === 'expense') {
-          // If credit, expense reduced balance (limit). To revert, we add back.
-          // If unpaid, it reduced limit. If paid, we assume user marked it paid which might have adjusted limit or not (depends on logic).
-          // For simplicity in this robust version: Expense always reduces balance (Limit available or Cash).
           await updateBalance(old.accountId, old.amount);
         }
         else if (old.type === 'transfer' && old.toAccountId) { await updateBalance(old.accountId, old.amount); await updateBalance(old.toAccountId, -old.amount); }
@@ -331,13 +328,6 @@ export default function App() {
   const handleToggleStatus = async (tx: Transaction) => {
      if (!user) return;
      const newStatus = tx.status === 'paid' ? 'unpaid' : 'paid';
-     // Logic: If credit card expense, marking as paid might mean paying off debt? 
-     // User request: "ถ้า status จ่ายแล้ว ก็ต้องคืนเงินเข้าบัตร". 
-     // Wait, usually "Paid" means I paid the bill.
-     // If I marked a transaction as "Paid", it means I settled it.
-     // If it's a credit card transaction, "Paid" status on the transaction itself is ambiguous.
-     // Usually we create a separate "Transfer" transaction to pay the bill.
-     // But following user request: "คืนเงินเข้าบัตร" implies increasing available limit.
      const acc = accounts.find(a => a.id === tx.accountId);
      if (acc?.type === 'credit' && tx.type === 'expense') {
         if (newStatus === 'paid') await updateBalance(tx.accountId, tx.amount); // Give back limit
@@ -411,23 +401,27 @@ export default function App() {
           if (name && name !== 'N/A') {
              const accData: any = { 
                name, bank, type, color: getBankColor(bank),
-               accountNumber: fixScientificNotation(clean(getCol('เลขบัตร'))), // Fix Scientific
+               accountNumber: fixScientificNotation(clean(getCol('เลขบัตร'))),
                cardType: clean(getCol('ประเภทบัตร')),
                statementDay: parseInt(clean(getCol('วันสรุปยอด'))) || 0,
                dueDay: parseInt(clean(getCol('กำหนดชำระ'))) || 0,
                totalDebt: num(getCol('ภาระหนี้'))
              };
+             // FIX: Default undefined to 0 to prevent Firebase Error
+             accData.limit = num(getCol('วงเงินทั้งหมด')) || 0;
              if (type === 'credit') { 
-                accData.limit = num(getCol('วงเงินทั้งหมด')); 
-                accData.balance = num(getCol('วงเงินคงเหลือ')) || (accData.limit - num(getCol('วงเงินที่ใช้ไป'))); 
+                const limitRem = num(getCol('วงเงินคงเหลือ'));
+                const limitUsed = num(getCol('วงเงินที่ใช้ไป'));
+                accData.balance = limitRem > 0 ? limitRem : (accData.limit - limitUsed);
              } else {
                 accData.balance = num(getCol('ยอดเงินในบัญชี'));
              }
+             if (isNaN(accData.balance)) accData.balance = 0;
              
              if (accId) batch.update(doc(db, 'artifacts', appId, 'users', user.uid, 'accounts', accId), accData);
              else {
                const ref = doc(collection(db, 'artifacts', appId, 'users', user.uid, 'accounts'));
-               batch.set(ref, { ...accData, balance: accData.balance||0, limit: accData.limit||0, totalDebt: accData.totalDebt||0, createdAt: serverTimestamp() });
+               batch.set(ref, { ...accData, createdAt: serverTimestamp() });
                accId = ref.id; newCache.set(key, accId);
              }
              count++;
@@ -455,9 +449,23 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   };
 
+  const handleSaveRecurring = async () => {
+    if (!user || !newRecurring.description) return;
+    await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'recurring'), { ...newRecurring, amount: Number(newRecurring.amount) });
+    setNewRecurring({ day: 1, amount: 0 });
+    alert('บันทึกรายจ่ายประจำแล้ว');
+  };
+
+  const handleUseRecurring = async (item: RecurringItem) => {
+    const today = new Date();
+    const date = new Date(today.getFullYear(), today.getMonth(), item.day).toISOString().split('T')[0];
+    await handleSaveTx({ ...item, date, type: 'expense', status: 'unpaid' });
+    alert('สร้างรายการแล้ว');
+  };
+
   // Views
   const availableMonths = useMemo(() => Array.from(new Set(transactions.map(t => t.date.substring(0, 7)))).sort().reverse(), [transactions]);
-  const filteredTx = useMemo(() => transactions.filter(t => (!filterMonth || t.date.startsWith(filterMonth)) && (filterType === 'all' || t.type === filterType) && (filterStatus === 'all' || t.status === filterStatus)), [transactions, filterMonth, filterType, filterStatus]);
+  const filteredTx = useMemo(() => transactions.filter(t => (!filterMonth || t.date.startsWith(filterMonth)) && (filterType === 'all' || t.type === filterType)), [transactions, filterMonth, filterType]);
   
   const totalAssets = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0);
   const totalDebt = accounts.reduce((s, a) => s + (a.totalDebt || 0), 0);
@@ -500,8 +508,8 @@ export default function App() {
                    </div>
                    <h1 className="text-4xl font-bold">{formatCurrency(totalAssets - (creditLimit - creditBal) - totalDebt)}</h1>
                    <div className="grid grid-cols-2 gap-4 mt-6">
-                      <div className="bg-white/10 p-3 rounded-xl"><p className="text-[10px] text-emerald-300">สินทรัพย์ (เงินสด)</p><p className="text-lg font-bold">{formatCurrency(totalAssets)}</p></div>
-                      <div className="bg-white/10 p-3 rounded-xl"><p className="text-[10px] text-rose-300">หนี้สินรวม (บัตร+ภาระ)</p><p className="text-lg font-bold">{formatCurrency((creditLimit - creditBal) + totalDebt)}</p></div>
+                      <div className="bg-white/10 p-3 rounded-xl"><p className="text-[10px] text-emerald-300">สินทรัพย์</p><p className="text-lg font-bold">{formatCurrency(totalAssets)}</p></div>
+                      <div className="bg-white/10 p-3 rounded-xl"><p className="text-[10px] text-rose-300">หนี้สิน</p><p className="text-lg font-bold">{formatCurrency((creditLimit - creditBal) + totalDebt)}</p></div>
                    </div>
                 </div>
                 {/* Recurring Quick Actions */}
@@ -537,7 +545,6 @@ export default function App() {
                 <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
                    <select className="bg-white border rounded text-xs p-2 min-w-[100px]" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}><option value="">ทุกเดือน</option>{availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m+'-01')}</option>)}</select>
                    <select className="bg-white border rounded text-xs p-2" value={filterType} onChange={e => setFilterType(e.target.value)}><option value="all">ทุกประเภท</option><option value="expense">รายจ่าย</option><option value="income">รายรับ</option></select>
-                   <select className="bg-white border rounded text-xs p-2" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">ทุกสถานะ</option><option value="paid">จ่ายแล้ว</option><option value="unpaid">รอจ่าย</option></select>
                 </div>
                 <div className="space-y-2 mb-8">{filteredTx.map(tx => (
                   <div key={tx.id} onClick={() => { setNewTxData(tx); setShowTxDetail(tx); }} className="bg-white p-4 border rounded-xl flex justify-between items-center cursor-pointer relative overflow-hidden">
