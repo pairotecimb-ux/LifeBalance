@@ -8,7 +8,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
 import {
   getFirestore, collection, addDoc, query, onSnapshot, deleteDoc, doc, updateDoc,
-  serverTimestamp, writeBatch, orderBy, increment, setDoc, getDoc
+  serverTimestamp, writeBatch, orderBy, increment, setDoc
 } from 'firebase/firestore';
 
 // --- Configuration ---
@@ -24,8 +24,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v11.2.0 (Restored)";
-const appId = 'credit-manager-pro-v11-2';
+const APP_VERSION = "v12.0.0 (Final Resurrection)";
+const appId = 'credit-manager-pro-v12';
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -90,7 +90,12 @@ const getThaiMonthName = (dateStr: string) => {
   if (!dateStr) return 'ทั้งหมด';
   try {
     const date = new Date(dateStr + '-01');
-    return isNaN(date.getTime()) ? dateStr : date.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
+    if (isNaN(date.getTime())) return dateStr;
+    const months = [
+      "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+      "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+    ];
+    return `${months[date.getMonth()]} ${date.getFullYear() + 543}`;
   } catch (e) { return dateStr; }
 };
 
@@ -145,13 +150,11 @@ const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดิ�
 
 const LoginScreen = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () => void }) => (
   <div className="h-full flex flex-col items-center justify-center p-6 bg-slate-900 text-white text-center relative overflow-hidden">
-    <div className="absolute top-[-20%] left-[-20%] w-[300px] h-[300px] bg-blue-600/30 rounded-full blur-[80px] animate-pulse"></div>
-    <div className="absolute bottom-[-20%] right-[-20%] w-[300px] h-[300px] bg-purple-600/30 rounded-full blur-[80px] animate-pulse delay-700"></div>
     <div className="relative z-10 w-full max-w-sm backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl">
       <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl">
         <Wallet className="w-10 h-10 text-white" />
       </div>
-      <h1 className="text-3xl font-bold mb-2">Credit Manager V11</h1>
+      <h1 className="text-3xl font-bold mb-2">Credit Manager V12</h1>
       <div className="space-y-3 mt-8">
         <button onClick={onLogin} className="w-full bg-white text-slate-900 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:scale-105 transition-all">
           <span className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-blue-600">G</span> Google Login
@@ -235,7 +238,7 @@ const AddTxForm = ({ accounts, categories, initialData, onSave, onCancel, isEdit
          </div>
          <select className="w-full p-4 rounded-2xl border-2 border-slate-200 text-sm font-bold bg-white outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-900 transition-all shadow-sm" value={formData.accountId || ''} onChange={e => setFormData({ ...formData, accountId: e.target.value })}>
            <option value="">-- เลือกบัญชี --</option>
-           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({safeFormatCurrency(a.balance)})</option>)}
+           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({formatCurrency(a.balance)})</option>)}
          </select>
       </div>
 
@@ -253,7 +256,7 @@ const AddTxForm = ({ accounts, categories, initialData, onSave, onCancel, isEdit
          <input type="text" placeholder="รายละเอียด (เช่น ค่ากาแฟ)" className="w-full p-4 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-slate-50 focus:border-slate-400 bg-white shadow-sm transition-all font-medium" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
          <div className="flex gap-3">
            <input type="date" className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm text-center bg-white shadow-sm font-medium" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
-           <select className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm bg-white shadow-sm font-medium" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>{CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select>
+           <select className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm bg-white shadow-sm font-medium" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
          </div>
          {formData.type === 'expense' && (
              <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-2xl">
@@ -325,19 +328,7 @@ export default function App() {
     if (!user) return;
     setLoading(true);
     const unsubAcc = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'accounts'), {
-      next: (s) => setAccounts(s.docs.map(d => {
-        const data = d.data();
-        return { 
-          id: d.id, 
-          name: data.name || 'Unknown',
-          bank: data.bank || 'Other',
-          type: data.type || 'cash',
-          balance: safeNumber(data.balance),
-          limit: safeNumber(data.limit),
-          totalDebt: safeNumber(data.totalDebt),
-          ...data
-        } as Account;
-      })),
+      next: (s) => setAccounts(s.docs.map(d => ({ id: d.id, ...d.data() } as Account))),
       error: (e) => console.error("Acc Error", e)
     });
     const unsubTx = onSnapshot(query(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), orderBy('createdAt', 'desc')), s => {
@@ -574,7 +565,7 @@ export default function App() {
     return { income, expense, balance: income - expense };
   }, [filteredTx]);
 
-  if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400 bg-slate-50">Loading...</div>;
+  if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400">Loading...</div>;
   if (!user) return <LoginScreen onLogin={handleLogin} onGuest={handleGuestLogin} />;
 
   return (
@@ -642,6 +633,7 @@ export default function App() {
                    {[...new Set(accounts.map(a => a.bank))].sort().map(bank => (
                       <button key={bank} onClick={() => setWalletFilterBank(bank)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${walletFilterBank === bank ? 'bg-slate-900 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-500'}`}>{bank}</button>
                    ))}
+                   <button onClick={() => { setIsNewAccount(true); setEditingAccount({ id: '', name: '', bank: '', type: 'bank', balance: 0, color: 'from-slate-700 to-slate-900' }); }} className="bg-slate-900 text-white w-8 h-8 rounded-full flex items-center justify-center shadow ml-auto flex-none"><Plus size={16}/></button>
                 </div>
                 <div className="space-y-6">
                    {[...new Set(accounts.filter(a => walletFilterBank === 'all' || a.bank === walletFilterBank).map(a => a.bank))].sort().map(bank => (
