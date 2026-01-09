@@ -12,7 +12,6 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration ---
-// Config Hardcoded เพื่อความชัวร์ (จากบทสนทนาก่อนหน้า)
 const firebaseConfig = {
   apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
   authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
@@ -25,8 +24,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v10.0.0 (God Mode Completed)";
-const appId = 'credit-manager-pro-v10-final';
+const APP_VERSION = "v10.0.1 (Fixed & Full)";
+const appId = 'credit-manager-pro-v10-fixed';
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -221,11 +220,12 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
 const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accounts: Account[], initialData: Partial<Transaction>, onSave: (data: Partial<Transaction>) => void, onCancel: () => void, isEdit: boolean }) => {
   const [formData, setFormData] = useState(initialData);
   const [selectedBank, setSelectedBank] = useState('');
+  const [selectedType, setSelectedType] = useState<string>('');
   
   useEffect(() => { setFormData(initialData); }, [initialData]);
 
   const banks = useMemo(() => Array.from(new Set(accounts.map(a => a.bank))).sort(), [accounts]);
-  const filteredAccounts = useMemo(() => accounts.filter(a => (!selectedBank || a.bank === selectedBank)), [accounts, selectedBank]);
+  const filteredAccounts = useMemo(() => accounts.filter(a => (!selectedBank || a.bank === selectedBank) && (!selectedType || a.type === selectedType)), [accounts, selectedBank, selectedType]);
 
   const handleSubmit = () => {
     if(!formData.amount || !formData.accountId) return alert('กรุณาระบุยอดเงินและบัญชี');
@@ -247,10 +247,13 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
 
       <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 space-y-3 shadow-inner">
          <div className="flex justify-between items-center"><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{formData.type === 'income' ? 'เข้าบัญชี' : 'จากบัญชี'}</p></div>
-         <select className="w-full p-3 rounded-xl border border-slate-200 text-sm outline-none bg-white mb-2 shadow-sm focus:border-slate-400 transition-colors" value={selectedBank} onChange={e => setSelectedBank(e.target.value)}><option value="">-- กรองตามธนาคาร --</option>{banks.map(b => <option key={b} value={b}>{b}</option>)}</select>
+         <div className="grid grid-cols-2 gap-2">
+           <select className="p-3 rounded-xl border border-slate-200 text-sm outline-none bg-white mb-2 shadow-sm focus:border-slate-400 transition-colors" value={selectedBank} onChange={e => { setSelectedBank(e.target.value); setSelectedType(''); }}><option value="">-- กรองธนาคาร --</option>{banks.map(b => <option key={b} value={b}>{b}</option>)}</select>
+           <select className="p-3 rounded-xl border border-slate-200 text-sm outline-none bg-white mb-2 shadow-sm focus:border-slate-400 transition-colors" value={selectedType} onChange={e => setSelectedType(e.target.value)}><option value="">-- ประเภท --</option><option value="bank">บัญชี</option><option value="credit">บัตรเครดิต</option><option value="cash">เงินสด</option></select>
+         </div>
          <select className="w-full p-4 rounded-2xl border-2 border-slate-200 text-sm font-bold bg-white outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-900 transition-all shadow-sm" value={formData.accountId || ''} onChange={e => setFormData({ ...formData, accountId: e.target.value })}>
            <option value="">-- เลือกบัญชี --</option>
-           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({formatCurrency(a.balance)})</option>)}
+           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({safeFormatCurrency(a.balance)})</option>)}
          </select>
       </div>
 
@@ -394,7 +397,6 @@ export default function App() {
   const handleToggleStatus = async (tx: Transaction) => {
      if (!user) return;
      const newStatus = tx.status === 'paid' ? 'unpaid' : 'paid';
-     // Logic: Status change does NOT affect balance in this version (kept simple)
      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', tx.id), { status: newStatus });
   };
 
@@ -650,7 +652,7 @@ export default function App() {
                      <div className={`absolute left-0 top-0 bottom-0 w-1 ${tx.status === 'paid' ? 'bg-emerald-400' : 'bg-amber-400'}`}></div>
                      <div className="pl-3">
                        <p className="font-bold text-sm truncate w-40 text-slate-800">{tx.description}</p>
-                       <p className="text-[10px] text-slate-400 mt-0.5">{safeFormatDate(tx.date)} • {accounts.find(a=>a.id===tx.accountId)?.name}</p>
+                       <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(tx.date)} • {accounts.find(a=>a.id===tx.accountId)?.name}</p>
                      </div>
                      <div className="text-right">
                        <p className={`font-bold ${tx.type==='income'?'text-emerald-600':'text-slate-900'}`}>{tx.type==='expense'?'-':''}{formatCurrency(tx.amount)}</p>
@@ -749,7 +751,7 @@ export default function App() {
                    <AddTxForm accounts={accounts} initialData={showTxDetail || newTxData} isEdit={!!showTxDetail} onSave={handleSaveTx} onCancel={() => { setShowAddTx(false); setShowTxDetail(null); }} />
                    {showTxDetail && (
                      <div className="mt-4 flex gap-2">
-                       <button onClick={() => handleToggleStatus(showTxDetail)} className={`flex-1 py-4 font-bold rounded-2xl shadow-sm transition ${showTxDetail.status==='paid'?'bg-amber-100 text-amber-700 hover:bg-amber-200':'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}>{showTxDetail.status==='paid'?'เปลี่ยนเป็นรอจ่าย':'ยืนยันการจ่าย'}</button>
+                       <button onClick={() => handleToggleStatus(showTxDetail)} className={`flex-1 py-4 font-bold rounded-2xl shadow-sm transition ${showTxDetail.status==='paid'?'bg-amber-100 text-amber-600':'bg-emerald-100 text-emerald-600'}`}>{showTxDetail.status==='paid'?'เปลี่ยนเป็นรอจ่าย':'ยืนยันการจ่าย'}</button>
                        <button onClick={handleDeleteTx} className="flex-1 py-4 text-rose-600 bg-rose-50 rounded-2xl font-bold hover:bg-rose-100 transition">ลบรายการ</button>
                      </div>
                    )}
