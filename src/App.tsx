@@ -8,7 +8,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
 import {
   getFirestore, collection, addDoc, query, onSnapshot, deleteDoc, doc, updateDoc,
-  serverTimestamp, writeBatch, orderBy, increment, setDoc
+  serverTimestamp, writeBatch, orderBy, increment, setDoc, getDoc
 } from 'firebase/firestore';
 
 // --- Configuration ---
@@ -24,8 +24,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v12.0.0 (Final Resurrection)";
-const appId = 'credit-manager-pro-v12';
+const APP_VERSION = "v12.1.0 (Settings Fixed)";
+const appId = 'credit-manager-pro-v12-fixed';
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -90,12 +90,7 @@ const getThaiMonthName = (dateStr: string) => {
   if (!dateStr) return 'ทั้งหมด';
   try {
     const date = new Date(dateStr + '-01');
-    if (isNaN(date.getTime())) return dateStr;
-    const months = [
-      "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-      "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
-    ];
-    return `${months[date.getMonth()]} ${date.getFullYear() + 543}`;
+    return isNaN(date.getTime()) ? dateStr : date.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
   } catch (e) { return dateStr; }
 };
 
@@ -150,6 +145,8 @@ const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดิ�
 
 const LoginScreen = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () => void }) => (
   <div className="h-full flex flex-col items-center justify-center p-6 bg-slate-900 text-white text-center relative overflow-hidden">
+    <div className="absolute top-[-20%] left-[-20%] w-[300px] h-[300px] bg-blue-600/30 rounded-full blur-[80px] animate-pulse"></div>
+    <div className="absolute bottom-[-20%] right-[-20%] w-[300px] h-[300px] bg-purple-600/30 rounded-full blur-[80px] animate-pulse delay-700"></div>
     <div className="relative z-10 w-full max-w-sm backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl">
       <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl">
         <Wallet className="w-10 h-10 text-white" />
@@ -197,6 +194,12 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
              <span>วงเงิน: {formatCurrency(account.limit || 0)}</span>
           </div>
         </>
+      )}
+      {safeNumber(account.totalDebt) > 0 && (
+         <div className="mt-2 pt-2 border-t border-white/20 flex items-center gap-2">
+           <div className="bg-rose-500/20 p-1 rounded-md"><TrendingUp size={12} className="text-rose-200 rotate-180"/></div>
+           <p className="text-xs text-rose-100 font-bold">ภาระหนี้: {formatCurrency(account.totalDebt)}</p>
+         </div>
       )}
     </div>
   </div>
@@ -452,6 +455,7 @@ export default function App() {
           if (row.length < 5) continue;
           const clean = (idx: number) => idx > -1 ? row[idx].replace(/"/g, '').trim() : '';
           const num = (idx: number) => parseFloat(clean(idx).replace(/,/g, '')) || 0;
+
           const name = clean(getCol('ชื่อบัตร')) || 'General';
           const bank = clean(getCol('ธนาคาร')) || 'Other';
           const typeRaw = clean(getCol('ประเภทบัญชี'));
@@ -708,7 +712,7 @@ export default function App() {
                 </div>
 
                 <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
-                   <button onClick={() => setShowImport(true)} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Upload size={18} className="text-blue-500"/> <span className="text-sm font-medium">นำเข้า CSV (Restore)</span></button>
+                   <button onClick={() => setShowImport(true)} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Upload size={18} className="text-blue-500"/> <span className="text-sm font-medium">นำเข้า CSV (Import)</span></button>
                    <button onClick={handleExportCSV} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Download size={18} className="text-emerald-500"/> <span className="text-sm font-medium">ส่งออก CSV (Backup)</span></button>
                    <button onClick={() => setShowCategoryMgr(true)} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Tag size={18} className="text-amber-500"/> <span className="text-sm font-medium">จัดการหมวดหมู่</span></button>
                    <button onClick={handleLogout} className="w-full p-4 flex items-center gap-3 hover:bg-slate-50 text-left text-rose-600 transition"><LogOut size={18}/> <span className="text-sm font-bold">ออกจากระบบ</span></button>
