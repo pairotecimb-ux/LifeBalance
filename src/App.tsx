@@ -24,8 +24,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v11.1.1 (Final Fix)";
-const appId = 'credit-manager-pro-v11-1';
+const APP_VERSION = "v11.2.0 (Restored)";
+const appId = 'credit-manager-pro-v11-2';
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -218,7 +218,7 @@ const AddTxForm = ({ accounts, categories, initialData, onSave, onCancel, isEdit
     <div className="space-y-6 pb-10">
       <div className="flex bg-slate-100 p-1.5 rounded-2xl shadow-inner">
         {[{ id: 'expense', label: 'รายจ่าย', color: 'text-rose-600' }, { id: 'income', label: 'รายรับ', color: 'text-emerald-600' }, { id: 'transfer', label: 'โอน/ชำระ', color: 'text-blue-600' }].map((t) => (
-          <button key={t.id} onClick={() => setFormData({ ...formData, type: t.id as any })} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${formData.type === t.id ? `bg-white shadow-md ${t.color}` : 'text-slate-400'}`}>{t.label}</button>
+          <button key={t.id} onClick={() => setFormData({ ...formData, type: t.id as any })} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 ${formData.type === t.id ? `bg-white shadow-md ${t.color}` : 'text-slate-400'}`}>{t.label}</button>
         ))}
       </div>
 
@@ -235,7 +235,7 @@ const AddTxForm = ({ accounts, categories, initialData, onSave, onCancel, isEdit
          </div>
          <select className="w-full p-4 rounded-2xl border-2 border-slate-200 text-sm font-bold bg-white outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-900 transition-all shadow-sm" value={formData.accountId || ''} onChange={e => setFormData({ ...formData, accountId: e.target.value })}>
            <option value="">-- เลือกบัญชี --</option>
-           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({formatCurrency(a.balance)})</option>)}
+           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({safeFormatCurrency(a.balance)})</option>)}
          </select>
       </div>
 
@@ -253,10 +253,7 @@ const AddTxForm = ({ accounts, categories, initialData, onSave, onCancel, isEdit
          <input type="text" placeholder="รายละเอียด (เช่น ค่ากาแฟ)" className="w-full p-4 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-slate-50 focus:border-slate-400 bg-white shadow-sm transition-all font-medium" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
          <div className="flex gap-3">
            <input type="date" className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm text-center bg-white shadow-sm font-medium" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
-           <select className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm bg-white shadow-sm font-medium" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
-             <option value="">-- หมวดหมู่ --</option>
-             {categories.map(c=><option key={c} value={c}>{c}</option>)}
-           </select>
+           <select className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm bg-white shadow-sm font-medium" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>{CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select>
          </div>
          {formData.type === 'expense' && (
              <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-2xl">
@@ -571,6 +568,12 @@ export default function App() {
     return sum;
   }, [filteredTx, accounts]);
 
+  const monthlySummary = useMemo(() => {
+    const income = filteredTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+    const expense = filteredTx.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+    return { income, expense, balance: income - expense };
+  }, [filteredTx]);
+
   if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400 bg-slate-50">Loading...</div>;
   if (!user) return <LoginScreen onLogin={handleLogin} onGuest={handleGuestLogin} />;
 
@@ -591,15 +594,18 @@ export default function App() {
                    <div className="absolute top-0 right-0 p-24 bg-blue-600 opacity-20 rounded-full blur-3xl translate-x-10 -translate-y-10 group-hover:bg-purple-600 transition-colors duration-500"></div>
                    <div className="relative z-10">
                       <div className="flex justify-between items-center mb-4">
-                        <p className="text-xs text-slate-400">ความมั่งคั่งสุทธิ</p>
+                        <p className="text-xs text-slate-400">สรุป ({filterMonth ? getThaiMonthName(filterMonth + '-01') : 'ทั้งหมด'})</p>
                         <select className="bg-white/10 text-xs p-1.5 rounded-lg text-white border-none outline-none cursor-pointer hover:bg-white/20 transition" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
                             <option value="">ทั้งหมด</option>
                             {availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m + '-01')}</option>)}
                         </select>
                       </div>
-                      <h1 className="text-4xl font-bold tracking-tight">{formatCurrency(totalAssets - creditUsedReal - totalDebt)}</h1>
-                      <div className="grid grid-cols-2 gap-4 mt-6">
-                          <div className="bg-white/10 p-3 rounded-xl border border-white/5 backdrop-blur-sm"><p className="text-[10px] text-emerald-300 flex items-center gap-1"><TrendingUp size={10}/> สินทรัพย์</p><p className="text-lg font-bold">{formatCurrency(totalAssets)}</p></div>
+                      <div className="flex justify-between items-end mb-6">
+                         <div><p className="text-[10px] text-emerald-400">รายรับ</p><p className="text-xl font-bold">{formatCurrency(monthlySummary.income)}</p></div>
+                         <div className="text-right"><p className="text-[10px] text-rose-400">รายจ่าย</p><p className="text-xl font-bold">{formatCurrency(monthlySummary.expense)}</p></div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-white/10 p-3 rounded-xl border border-white/5 backdrop-blur-sm"><p className="text-[10px] text-blue-300 flex items-center gap-1"><Landmark size={10}/> ทรัพย์สิน</p><p className="text-lg font-bold">{formatCurrency(totalAssets)}</p></div>
                           <div className="bg-white/10 p-3 rounded-xl border border-white/5 backdrop-blur-sm"><p className="text-[10px] text-rose-300 flex items-center gap-1"><CreditCard size={10}/> หนี้สินรวม</p><p className="text-lg font-bold">{formatCurrency(creditUsedReal + totalDebt)}</p></div>
                       </div>
                    </div>
@@ -625,6 +631,7 @@ export default function App() {
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                    <h3 className="font-bold mb-3 text-sm flex items-center gap-2"><Building size={16}/> สรุปตามธนาคาร ({filterMonth ? getThaiMonthName(filterMonth+'-01') : 'ทั้งหมด'})</h3>
                    {Object.entries(bankSummary).map(([bank, amt]) => (<div key={bank} className="flex justify-between text-xs mb-2 border-b border-slate-200 pb-2 last:border-0 last:mb-0"><span>{bank}</span><span className="font-bold text-slate-700">{formatCurrency(amt)}</span></div>))}
+                   <div className="mt-2 pt-2 border-t border-slate-300 flex justify-between text-xs font-bold text-slate-800"><span>รวมทั้งหมด</span><span>{formatCurrency(Object.values(bankSummary).reduce((a,b)=>a+b,0))}</span></div>
                 </div>
              </div>
            )}
