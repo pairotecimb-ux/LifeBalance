@@ -12,21 +12,25 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration ---
-const firebaseConfig = JSON.parse(__firebase_config || '{}');
-const safeConfig = Object.keys(firebaseConfig).length > 0 ? firebaseConfig : {
-    apiKey: "api-key-placeholder",
-    authDomain: "domain-placeholder",
-    projectId: "project-id",
-    storageBucket: "bucket",
-    messagingSenderId: "sender-id",
-    appId: "app-id"
+const firebaseConfig = {
+  apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
+  authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
+  projectId: 'credit-card-manager-b95c8',
+  storageBucket: 'credit-card-manager-b95c8.firebasestorage.app',
+  messagingSenderId: '486114228268',
+  appId: '1:486114228268:web:6d00ae1430aae1e252b989',
 };
 
-const app = initializeApp(safeConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const APP_VERSION = "v13.1.0 (Resurrection)";
-const appId = 'credit-manager-pro-v13-1';
+// Initialize Firebase safely
+let app, auth, db;
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (e) { console.error("Firebase Init Error", e); }
+
+const APP_VERSION = "v13.2.0 (Stable)";
+const appId = 'credit-manager-pro-v13-2';
 const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/สาธารณูปโภค', 'ผ่อนสินค้า', 'สุขภาพ', 'บันเทิง', 'เงินเดือน', 'อื่นๆ'];
 
 // --- Types ---
@@ -202,11 +206,6 @@ export default function App() {
     setShowAddTx(false); setTxForm({ type: 'expense', amount: '', date: new Date().toISOString().split('T')[0], category: 'ทั่วไป', status: 'unpaid' });
   };
 
-  const handleToggleStatus = async (tx: any) => {
-    const newStatus = tx.status === 'paid' ? 'unpaid' : 'paid';
-    await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', tx.id), { status: newStatus });
-  };
-
   const handleDeleteTx = async () => {
     if (!user || !txForm.id) return;
     if (!confirm('ยืนยันลบ? ยอดเงินจะถูกคืนกลับ')) return;
@@ -234,72 +233,48 @@ export default function App() {
           const getCol = (k: string) => headers.findIndex(h => h.includes(k));
           
           const batch = writeBatch(db);
-          // ใช้ Map เก็บ ID บัญชี เพื่ออัปเดตข้อมูลล่าสุด ไม่สร้างซ้ำ และแก้หนี้เบิ้ล
-          const accMap = new Map();
-          
-          // Loop แรก: จัดการบัญชีก่อน
-          for (let i = headerIdx + 1; i < lines.length; i++) {
-              const row = lines[i].split(','); if(row.length<5) continue;
-              const clean = (i:number) => i > -1 ? row[i].replace(/"/g,'').trim() : '';
-              const num = (i:number) => parseFloat(clean(i).replace(/,/g,'')) || 0;
-              
-              const name = clean(getCol('ชื่อบัตร')) || 'General';
-              const bank = clean(getCol('ธนาคาร')) || 'Other';
-              const typeRaw = clean(getCol('ประเภทบัญชี'));
-              const balanceVal = num(getCol('ยอดเงินในบัญชี'));
-              const type = (typeRaw.includes('บัญชี') || bank.includes('ธนาคาร') || balanceVal > 0) ? 'bank' : typeRaw.includes('เงินสด') ? 'cash' : 'credit';
-              const key = `${bank}-${name}`;
-              
-              // เก็บข้อมูลล่าสุดของแต่ละบัญชีไว้ (บรรทัดล่าสุดใน CSV ถือเป็นข้อมูลล่าสุด)
-              accMap.set(key, {
-                  name, bank, type, color: getBankColor(bank),
-                  accountNumber: fixScientificNotation(clean(getCol('เลขบัตร'))),
-                  totalDebt: num(getCol('ภาระหนี้')),
-                  statementDay: parseInt(clean(getCol('วันสรุปยอด'))) || 0,
-                  dueDay: parseInt(clean(getCol('กำหนดชำระ'))) || 0,
-                  limit: num(getCol('วงเงินทั้งหมด')) || 0,
-                  limitRem: num(getCol('วงเงินคงเหลือ')),
-                  limitUsed: num(getCol('วงเงินที่ใช้ไป')),
-                  balanceVal: balanceVal
-              });
-          }
+          const existing = new Map(accounts.map(a => [`${a.bank}-${a.name}`, a.id]));
+          const newCache = new Map();
+          let count = 0;
 
-          // Loop บันทึกบัญชี
-          const accIds = new Map(); // Map key -> firestoreId
-          for (const [key, data] of accMap.entries()) {
-              const existing = accounts.find(a => `${a.bank}-${a.name}` === key);
-              let accId = existing?.id;
-              
-              const accData: any = { ...data };
-              delete accData.limitRem; delete accData.limitUsed; delete accData.balanceVal;
-
-              if (data.type === 'credit') {
-                 // แก้หนี้เบิ้ล: ถ้าใช้ไป 0 ให้ถือว่าเต็มวงเงิน (Balance = Limit)
-                 accData.balance = data.limitRem > 0 ? data.limitRem : (data.limitUsed === 0 ? data.limit : data.limit - data.limitUsed);
-              } else {
-                 accData.balance = data.balanceVal;
-              }
-
-              if (accId) {
-                  batch.update(doc(db,'artifacts',appId,'users',user.uid,'accounts',accId), accData);
-              } else {
-                  const ref = doc(collection(db,'artifacts',appId,'users',user.uid,'accounts'));
-                  batch.set(ref, { ...accData, createdAt: serverTimestamp() });
-                  accId = ref.id;
-              }
-              accIds.set(key, accId);
-          }
-          
-          // Loop บันทึก Transaction
           for (let i = headerIdx + 1; i < lines.length; i++) {
              const row = lines[i].split(','); if(row.length<5) continue;
              const clean = (i:number) => i > -1 ? row[i].replace(/"/g,'').trim() : '';
              const num = (i:number) => parseFloat(clean(i).replace(/,/g,'')) || 0;
+             
              const name = clean(getCol('ชื่อบัตร')) || 'General';
              const bank = clean(getCol('ธนาคาร')) || 'Other';
+             const typeRaw = clean(getCol('ประเภทบัญชี'));
+             const balanceVal = num(getCol('ยอดเงินในบัญชี'));
+             // Logic แยกประเภท: ถ้ามีเงินในบัญชี > 0 = Bank
+             const type = (typeRaw.includes('บัญชี') || bank.includes('ธนาคาร') || balanceVal > 0) ? 'bank' : typeRaw.includes('เงินสด') ? 'cash' : 'credit';
              const key = `${bank}-${name}`;
-             const accId = accIds.get(key);
-
+             
+             let accId = existing.get(key) || newCache.get(key);
+             if (name && name !== 'N/A') {
+                 const accData: any = { 
+                    name, bank, type, color: getBankColor(bank),
+                    accountNumber: fixScientificNotation(clean(getCol('เลขบัตร'))),
+                    totalDebt: num(getCol('ภาระหนี้')),
+                    statementDay: parseInt(clean(getCol('วันสรุปยอด'))) || 0,
+                    dueDay: parseInt(clean(getCol('กำหนดชำระ'))) || 0
+                 };
+                 accData.limit = num(getCol('วงเงินทั้งหมด')) || 0;
+                 if (type === 'credit') {
+                    const limitRem = num(getCol('วงเงินคงเหลือ'));
+                    const limitUsed = num(getCol('วงเงินที่ใช้ไป'));
+                    // แก้หนี้เบิ้ล: ถ้าใช้ไป 0 ให้ถือว่าเต็มวงเงิน
+                    accData.balance = limitRem > 0 ? limitRem : (limitUsed === 0 ? accData.limit : accData.limit - limitUsed);
+                 } else { accData.balance = balanceVal; }
+                 
+                 if (accId) batch.update(doc(db,'artifacts',appId,'users',user.uid,'accounts',accId), accData);
+                 else {
+                    const ref = doc(collection(db,'artifacts',appId,'users',user.uid,'accounts'));
+                    batch.set(ref, { ...accData, createdAt: serverTimestamp() });
+                    accId = ref.id; newCache.set(key, accId);
+                 }
+             }
+             
              const desc = clean(getCol('รายละเอียดค่าใช้จ่าย')); const amt = num(getCol('ยอดชำระ'));
              if (accId && desc && desc !== 'ไม่มี' && amt > 0) {
                 const txRef = doc(collection(db,'artifacts',appId,'users',user.uid,'transactions'));
@@ -310,11 +285,11 @@ export default function App() {
                    status: clean(getCol('สถานะ')).includes('จ่ายแล้ว') ? 'paid' : 'unpaid',
                    type: 'expense', category: 'Import', createdAt: serverTimestamp()
                 });
+                count++;
              }
           }
-
           await batch.commit();
-          alert(`นำเข้าสำเร็จ`);
+          alert(`นำเข้าสำเร็จ ${count} รายการ`);
           setShowImport(false);
        } catch (e: any) { alert(e.message); } finally { setImporting(false); }
     };
@@ -383,8 +358,8 @@ export default function App() {
   const totalDebt = accounts.reduce((s, a) => s + (a.totalDebt || 0), 0);
   const creditLimit = accounts.filter(a => a.type === 'credit').reduce((s, a) => s + (a.limit || 0), 0);
   const creditBal = accounts.filter(a => a.type === 'credit').reduce((s, a) => s + a.balance, 0);
-  const creditUsedReal = creditLimit - creditBal;
-
+  
+  // Bank Summary
   const bankSummary = useMemo(() => {
     const sum: Record<string, {income: number, expense: number}> = {};
     filteredTx.forEach(t => {
@@ -502,7 +477,7 @@ export default function App() {
                 <div className="space-y-2 mb-8">{filteredTx.map(tx => (
                   <div key={tx.id} onClick={() => { setTxForm(tx); setShowAddTx(true); }} className="bg-white p-4 border border-slate-100 rounded-2xl flex justify-between items-center cursor-pointer">
                      <div><p className="font-bold text-sm truncate w-40">{tx.category}<br/><span className="text-[10px] text-slate-400 font-normal">{tx.description}</span></p><p className="text-[10px] text-slate-400">{formatDate(tx.date)} • {accounts.find(a=>a.id===tx.accountId)?.name}</p></div>
-                     <div className="text-right"><p className={`font-bold ${tx.type==='income'?'text-emerald-600':'text-slate-900'}`}>{tx.type==='expense'?'-':''}{formatCurrency(tx.amount)}</p><button onClick={(e)=>{e.stopPropagation();handleToggleStatus(tx)}} className={`text-[9px] px-2 py-0.5 rounded-full ${tx.status==='paid'?'bg-emerald-100 text-emerald-600':'bg-amber-100 text-amber-600'}`}>{tx.status==='paid'?'จ่ายแล้ว':'รอจ่าย'}</button></div>
+                     <div className="text-right"><p className={`font-bold ${tx.type==='income'?'text-emerald-600':'text-slate-900'}`}>{tx.type==='expense'?'-':''}{formatCurrency(tx.amount)}</p><span className={`text-[9px] px-2 py-0.5 rounded-full ${tx.status==='paid' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>{tx.status==='paid'?'จ่ายแล้ว':'รอจ่าย'}</span></div>
                   </div>
                 ))}</div>
                 <div className="bg-slate-50 p-4 rounded-xl text-center">
@@ -523,9 +498,9 @@ export default function App() {
 
                 {/* Recurring */}
                 <div className="bg-white rounded-2xl border p-4"><h3 className="font-bold text-sm mb-2">รายจ่ายประจำ</h3>
-                   <div className="flex gap-2 mb-2"><input placeholder="รายการ" className="flex-[2] p-2 border rounded text-xs" value={recForm.description} onChange={e=>setRecForm({...recForm, description:e.target.value})}/><input type="number" placeholder="บาท" className="w-16 p-2 border rounded text-xs" onChange={e=>setRecForm({...recForm, amount:e.target.value})}/><select className="w-24 p-2 border rounded text-xs" onChange={e=>setRecForm({...recForm, accountId:e.target.value})}><option value="">ตัดผ่าน</option>{accounts.map((a:any)=><option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+                   <div className="flex gap-2 mb-2"><input placeholder="รายการ" className="flex-[2] p-2 border rounded text-xs" value={recForm.description} onChange={e=>setRecForm({...recForm, description:e.target.value})}/><input type="number" placeholder="บาท" className="w-16 p-2 border rounded text-xs" onChange={e=>setRecForm({...recForm, amount:e.target.value})}/><select className="w-24 p-2 border rounded text-xs" onChange={e=>setRecForm({...recForm, accountId:e.target.value})}><option value="">ตัดผ่าน</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
                    <div className="flex gap-2 mb-2"><input type="number" placeholder="วัน" className="w-12 p-2 border rounded text-xs" onChange={e=>setRecForm({...recForm, day:e.target.value})}/><button onClick={handleSaveRecurring} className="flex-1 py-2 bg-slate-900 text-white rounded text-xs">เพิ่ม</button></div>
-                   <div className="mt-2 space-y-1">{recurringItems.map((r:any)=><div key={r.id} className="flex justify-between text-xs bg-slate-50 p-2 rounded"><span>{r.description} ({formatCurrency(r.amount)}) วันที่ {r.day}</span><div className="flex gap-2"><button onClick={() => handleUseRecurring(r)} className="text-blue-500">สร้าง</button><button onClick={()=>deleteDoc(doc(db,'artifacts',appId,'users',user.uid,'recurring',r.id))} className="text-rose-500">x</button></div></div>)}</div>
+                   <div className="mt-2 space-y-1">{recurringItems.map(r=><div key={r.id} className="flex justify-between text-xs bg-slate-50 p-2 rounded"><span>{r.description} ({formatCurrency(r.amount)}) วันที่ {r.day}</span><div className="flex gap-2"><button onClick={() => handleUseRecurring(r)} className="text-blue-500">สร้าง</button><button onClick={()=>deleteDoc(doc(db,'artifacts',appId,'users',user.uid,'recurring',r.id))} className="text-rose-500">x</button></div></div>)}</div>
                 </div>
 
                 <div className="bg-white rounded-2xl border overflow-hidden">
