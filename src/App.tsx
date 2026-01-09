@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration ---
+// Config ของคุณ (Hardcoded เพื่อความเสถียร)
 const firebaseConfig = {
   apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
   authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
@@ -21,16 +22,12 @@ const firebaseConfig = {
   appId: '1:486114228268:web:6d00ae1430aae1e252b989',
 };
 
-// Initialize safely
-let app, auth, db;
-try {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-} catch (e) { console.error(e); }
-
-const APP_VERSION = "v12.2.0 (Ultimate Fix)";
-const appId = 'credit-manager-pro-v12';
+// Initialize Safely
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const APP_VERSION = "v12.2.0 (Final Fix)";
+const appId = 'credit-manager-pro-v12-final';
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -70,7 +67,6 @@ interface RecurringItem {
   accountId: string;
   category: string;
   day: number;
-  monthsLeft?: number;
 }
 
 // --- Helpers ---
@@ -562,11 +558,7 @@ export default function App() {
 
   // Views
   const availableMonths = useMemo(() => Array.from(new Set(transactions.map(t => t.date.substring(0, 7)))).sort().reverse(), [transactions]);
-  const filteredTx = useMemo(() => transactions.filter(t => 
-    (!filterMonth || t.date.startsWith(filterMonth)) && 
-    (filterType === 'all' || t.type === filterType) && 
-    (filterStatus === 'all' || t.status === filterStatus)
-  ), [transactions, filterMonth, filterType, filterStatus]);
+  const filteredTx = useMemo(() => transactions.filter(t => (!filterMonth || t.date.startsWith(filterMonth)) && (filterType === 'all' || t.type === filterType) && (filterStatus === 'all' || t.status === filterStatus)), [transactions, filterMonth, filterType, filterStatus]);
   
   const totalAssets = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0);
   const totalDebt = accounts.reduce((s, a) => s + (a.totalDebt || 0), 0);
@@ -595,7 +587,7 @@ export default function App() {
     return { income, expense, balance: income - expense };
   }, [filteredTx]);
 
-  if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400">Loading...</div>;
+  if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400 bg-slate-50">Loading...</div>;
   if (!user) return <LoginScreen onLogin={handleLogin} onGuest={handleGuestLogin} />;
 
   return (
@@ -663,8 +655,14 @@ export default function App() {
                    {/* ✅ ปุ่มเพิ่มบัญชี Manual กลับมาแล้ว (มุมขวาบนของหน้า Wallet) */}
                    <button onClick={() => { setIsNewAccount(true); setEditingAccount({ id: '', name: '', bank: '', type: 'bank', balance: 0, color: 'from-slate-700 to-slate-900' }); }} className="bg-slate-900 text-white w-8 h-8 rounded-full flex items-center justify-center shadow hover:scale-110 transition"><Plus size={16}/></button>
                 </div>
-                <div className="space-y-6">
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                   <button onClick={() => setWalletFilterBank('all')} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${walletFilterBank === 'all' ? 'bg-slate-900 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-500'}`}>ทั้งหมด</button>
                    {[...new Set(accounts.map(a => a.bank))].sort().map(bank => (
+                      <button key={bank} onClick={() => setWalletFilterBank(bank)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${walletFilterBank === bank ? 'bg-slate-900 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-500'}`}>{bank}</button>
+                   ))}
+                </div>
+                <div className="space-y-6">
+                   {[...new Set(accounts.filter(a => walletFilterBank === 'all' || a.bank === walletFilterBank).map(a => a.bank))].sort().map(bank => (
                      <div key={bank} className="animate-fade-in">
                        <h3 className="text-sm font-bold text-slate-500 mb-3 ml-1 flex items-center gap-2"><div className={`w-2 h-2 rounded-full bg-gradient-to-r ${getBankColor(bank)}`}></div>{bank}</h3>
                        <div className="space-y-3">{accounts.filter(a => a.bank === bank).map(a => <AccountCard key={a.id} account={a} onClick={() => { setIsNewAccount(false); setEditingAccount(a); }} />)}</div>
@@ -702,7 +700,6 @@ export default function App() {
              <div className="pt-4">
                 <h2 className="text-2xl font-bold mb-4">ตั้งค่า</h2>
                 
-                {/* Profile Section with Safe Check */}
                 <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden mb-4 shadow-sm">
                    <div className="p-4 border-b border-slate-50 bg-slate-50/50"><h3 className="font-bold flex items-center gap-2 text-sm"><UserCircle size={16}/> ข้อมูลส่วนตัว</h3></div>
                    <div className="p-4 text-sm text-slate-600">
