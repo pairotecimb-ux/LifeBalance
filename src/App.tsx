@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  PieChart, CreditCard, Plus, Trash2, Wallet, LayoutDashboard, List, Settings, Upload, Download,
+  PieChart as IconPieChart, CreditCard, Plus, Trash2, Wallet, LayoutDashboard, List, Settings, Upload, Download,
   CheckCircle2, XCircle, TrendingUp, DollarSign, Calendar, ChevronRight, Filter,
-  ArrowRightLeft, Landmark, Coins, Edit2, Save, Building, MoreHorizontal, Search, X, LogOut, Lock, Info, Repeat, RefreshCw, UserCircle, BarChart3
+  ArrowRightLeft, Landmark, Coins, Edit2, Save, Building, MoreHorizontal, Search, X, LogOut, Lock, Info, Repeat, RefreshCw, UserCircle, User as UserIcon
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
@@ -12,21 +12,23 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration ---
-const firebaseConfig = {
-  apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
-  authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
-  projectId: 'credit-card-manager-b95c8',
-  storageBucket: 'credit-card-manager-b95c8.firebasestorage.app',
-  messagingSenderId: '486114228268',
-  appId: '1:486114228268:web:6d00ae1430aae1e252b989',
+const firebaseConfig = JSON.parse(__firebase_config || '{}'); // รับค่า Config จาก Environment
+
+// Fallback for safety if config is missing (Prevents crash on initialization)
+const safeConfig = Object.keys(firebaseConfig).length > 0 ? firebaseConfig : {
+  apiKey: "api-key-placeholder",
+  authDomain: "domain-placeholder",
+  projectId: "project-id",
+  storageBucket: "bucket",
+  messagingSenderId: "sender-id",
+  appId: "app-id"
 };
 
-const app = initializeApp(firebaseConfig);
+const app = initializeApp(safeConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v7.5.0 (God Mode)";
-// เปลี่ยน App ID เพื่อเริ่ม Database ใหม่ที่สะอาด (แก้ปัญหาหน้าขาวจากข้อมูลเก่า)
-const appId = 'credit-manager-pro-v7-ultimate';
+const APP_VERSION = "v8.0.0 (Portal UI)";
+const appId = 'credit-manager-pro-v8'; // New ID for clean start
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -68,14 +70,16 @@ interface RecurringItem {
   day: number;
 }
 
-// --- Safe Helpers ---
+// --- Helpers ---
 const safeNumber = (val: any) => {
   const num = parseFloat(val);
   return isNaN(num) ? 0 : num;
 };
 
 const safeFormatCurrency = (val: any) => {
-  return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(safeNumber(val));
+  try {
+    return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(safeNumber(val));
+  } catch (e) { return '0.00'; }
 };
 
 const safeFormatDate = (date: any) => {
@@ -125,16 +129,16 @@ const fixScientificNotation = (str: string) => {
 };
 
 const BANK_COLORS: Record<string, string> = {
-  'ไทยพาณิชย์': 'from-purple-700 to-purple-900', 'SCB': 'from-purple-700 to-purple-900',
-  'กสิกรไทย': 'from-emerald-600 to-emerald-800', 'Kbank': 'from-emerald-600 to-emerald-800',
-  'กรุงศรี': 'from-yellow-600 to-yellow-800', 'BAY': 'from-yellow-600 to-yellow-800', 'Krungsri': 'from-yellow-600 to-yellow-800',
-  'กรุงเทพ': 'from-blue-700 to-blue-900', 'BBL': 'from-blue-700 to-blue-900',
+  'ไทยพาณิชย์': 'from-purple-600 to-purple-900', 'SCB': 'from-purple-600 to-purple-900',
+  'กสิกรไทย': 'from-emerald-500 to-emerald-800', 'Kbank': 'from-emerald-500 to-emerald-800', 'Kplus': 'from-emerald-500 to-emerald-800',
+  'กรุงศรี': 'from-yellow-500 to-yellow-700', 'BAY': 'from-yellow-500 to-yellow-700', 'Krungsri': 'from-yellow-500 to-yellow-700',
+  'กรุงเทพ': 'from-blue-600 to-blue-900', 'BBL': 'from-blue-600 to-blue-900', 'Bangkok': 'from-blue-600 to-blue-900',
   'ทหารไทย': 'from-blue-500 to-red-500', 'TTB': 'from-blue-500 to-red-500',
-  'ยูโอบี': 'from-slate-700 to-slate-900', 'UOB': 'from-slate-700 to-slate-900',
-  'ซิตี้': 'from-cyan-600 to-blue-800', 'Citi': 'from-cyan-600 to-blue-800',
-  'ออมสิน': 'from-pink-500 to-pink-700', 'GSB': 'from-pink-500 to-pink-700',
-  'เงินสด': 'from-green-600 to-green-800', 'Cash': 'from-green-600 to-green-800',
-  'default': 'from-slate-600 to-slate-800'
+  'ยูโอบี': 'from-slate-600 to-slate-800', 'UOB': 'from-slate-600 to-slate-800',
+  'ซิตี้': 'from-cyan-500 to-blue-700', 'Citi': 'from-cyan-500 to-blue-700',
+  'ออมสิน': 'from-pink-400 to-pink-600', 'GSB': 'from-pink-400 to-pink-600',
+  'เงินสด': 'from-green-500 to-green-700', 'Cash': 'from-green-500 to-green-700',
+  'default': 'from-slate-500 to-slate-700'
 };
 const getBankColor = (bankName: string) => BANK_COLORS[Object.keys(BANK_COLORS).find(k => bankName?.toLowerCase().includes(k.toLowerCase())) || 'default'];
 
@@ -144,55 +148,58 @@ const CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทา
 
 const LoginScreen = ({ onLogin }: { onLogin: () => void }) => (
   <div className="h-full flex flex-col items-center justify-center p-6 bg-slate-900 text-white text-center relative overflow-hidden">
-    <div className="absolute top-[-20%] left-[-20%] w-[300px] h-[300px] bg-blue-600/30 rounded-full blur-[80px]"></div>
-    <div className="relative z-10 w-full max-w-sm">
-      <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl rotate-6 hover:rotate-12 transition-transform duration-500">
+    <div className="absolute top-[-20%] left-[-20%] w-[300px] h-[300px] bg-blue-600/30 rounded-full blur-[80px] animate-pulse"></div>
+    <div className="absolute bottom-[-20%] right-[-20%] w-[300px] h-[300px] bg-purple-600/30 rounded-full blur-[80px] animate-pulse delay-700"></div>
+    <div className="relative z-10 w-full max-w-sm backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl">
+      <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl rotate-6 hover:rotate-12 transition-transform duration-500 cursor-pointer">
         <Wallet className="w-10 h-10 text-white" />
       </div>
-      <h1 className="text-3xl font-bold mb-2">Credit Manager V7</h1>
-      <p className="text-slate-400 mb-8 text-sm">การเงินของคุณ ควบคุมได้ดั่งใจ</p>
-      <button onClick={onLogin} className="w-full bg-white text-slate-900 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-50 hover:scale-105 transition-all shadow-lg">
-        เข้าสู่ระบบด้วย Google
+      <h1 className="text-3xl font-bold mb-2 tracking-tight">Credit Manager <span className="text-blue-400">Pro</span></h1>
+      <p className="text-slate-400 mb-8 text-sm">จัดการทุกบัญชีในที่เดียว อย่างชาญฉลาด</p>
+      <button onClick={onLogin} className="w-full bg-white text-slate-900 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-50 hover:scale-105 transition-all shadow-lg active:scale-95 group">
+        <span className="w-5 h-5 rounded-full bg-slate-200 group-hover:bg-blue-200 flex items-center justify-center text-xs">G</span> เข้าสู่ระบบด้วย Google
       </button>
     </div>
   </div>
 );
 
 const AccountCard = ({ account, onClick }: { account: Account, onClick: () => void }) => (
-  <div onClick={onClick} className={`relative p-4 rounded-2xl text-white overflow-hidden bg-gradient-to-br ${account.color} shadow-lg cursor-pointer hover:scale-[1.02] active:scale-95 transition-all duration-300 border border-white/10 group`}>
-    <div className="flex justify-between items-start mb-3">
-      <div className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm group-hover:rotate-12 transition-transform">
-          {account.type === 'bank' ? <Landmark size={14}/> : account.type === 'cash' ? <Coins size={14}/> : <CreditCard size={14}/>}
+  <div onClick={onClick} className={`relative p-5 rounded-2xl text-white overflow-hidden bg-gradient-to-br ${account.color} shadow-lg cursor-pointer hover:scale-[1.03] active:scale-95 transition-all duration-300 border border-white/10 group`}>
+    <div className="absolute right-[-20px] top-[-20px] w-24 h-24 bg-white/10 rounded-full blur-xl group-hover:bg-white/20 transition-colors"></div>
+    <div className="flex justify-between items-start mb-4 relative z-10">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-md border border-white/10 shadow-sm group-hover:rotate-12 transition-transform duration-500">
+          {account.type === 'bank' ? <Landmark size={20}/> : account.type === 'cash' ? <Coins size={20}/> : <CreditCard size={20}/>}
         </div>
         <div>
-          <p className="text-[10px] opacity-80 uppercase font-medium flex items-center gap-1">{account.bank} {account.cardType && <span className="bg-white/20 px-1 rounded">{account.cardType}</span>}</p>
-          <p className="font-bold text-lg leading-none truncate w-40">{account.name}</p>
-          {account.accountNumber && <p className="text-[10px] opacity-60 font-mono mt-0.5">{account.accountNumber}</p>}
+          <p className="text-[10px] opacity-80 uppercase font-bold tracking-wider flex items-center gap-1">{account.bank}</p>
+          <p className="font-bold text-lg leading-none truncate w-40 drop-shadow-md">{account.name}</p>
+          {account.accountNumber && <p className="text-[10px] opacity-70 font-mono mt-1 tracking-widest">{account.accountNumber}</p>}
         </div>
       </div>
-      <Edit2 size={16} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+      <div className="bg-white/20 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm"><Edit2 size={14} /></div>
     </div>
     
-    <div className="space-y-1">
+    <div className="space-y-2 relative z-10">
       <div className="flex justify-between items-end">
-        <p className="text-xs opacity-70">{account.type === 'credit' ? 'วงเงินคงเหลือ' : 'ยอดเงินในบัญชี'}</p>
-        <p className="text-xl font-bold">{safeFormatCurrency(account.balance)}</p>
+        <p className="text-xs opacity-80 font-medium">{account.type === 'credit' ? 'วงเงินคงเหลือ' : 'ยอดเงินในบัญชี'}</p>
+        <p className="text-2xl font-bold tracking-tight drop-shadow-sm">{safeFormatCurrency(account.balance)}</p>
       </div>
       {account.type === 'credit' && account.limit && account.limit > 0 && (
         <>
-          <div className="w-full bg-black/20 h-1.5 rounded-full overflow-hidden mt-1">
-             <div className="bg-white h-full" style={{ width: `${Math.min(((account.limit - account.balance) / account.limit) * 100, 100)}%` }}></div>
+          <div className="w-full bg-black/20 h-1.5 rounded-full overflow-hidden">
+             <div className="bg-white h-full shadow-[0_0_10px_rgba(255,255,255,0.5)] transition-all duration-1000" style={{ width: `${Math.min(((account.limit - account.balance) / account.limit) * 100, 100)}%` }}></div>
           </div>
-          <div className="flex justify-between text-[10px] opacity-60 pt-1">
+          <div className="flex justify-between text-[10px] opacity-70 font-medium">
              <span>ใช้ไป: {safeFormatCurrency((account.limit || 0) - account.balance)}</span>
              <span>วงเงิน: {safeFormatCurrency(account.limit || 0)}</span>
           </div>
         </>
       )}
       {account.totalDebt !== undefined && account.totalDebt > 0 && (
-         <div className="mt-2 pt-2 border-t border-white/10">
-           <p className="text-[10px] text-rose-200 flex items-center gap-1 font-bold animate-pulse"><TrendingUp size={10} className="rotate-180"/> ภาระหนี้: {safeFormatCurrency(account.totalDebt)}</p>
+         <div className="mt-2 pt-2 border-t border-white/20 flex items-center gap-2">
+           <div className="bg-rose-500/20 p-1 rounded-md"><TrendingUp size={12} className="text-rose-200 rotate-180"/></div>
+           <p className="text-xs text-rose-100 font-bold">ภาระหนี้: {safeFormatCurrency(account.totalDebt)}</p>
          </div>
       )}
     </div>
@@ -215,30 +222,30 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
 
   return (
     <div className="space-y-6 pb-10">
-      <div className="flex bg-slate-100 p-1 rounded-xl">
+      <div className="flex bg-slate-100 p-1.5 rounded-2xl shadow-inner">
         {[{ id: 'expense', label: 'รายจ่าย', color: 'text-rose-600' }, { id: 'income', label: 'รายรับ', color: 'text-emerald-600' }, { id: 'transfer', label: 'โอน/ชำระ', color: 'text-blue-600' }].map((t) => (
-          <button key={t.id} onClick={() => setFormData({ ...formData, type: t.id as any })} className={`flex-1 py-3 rounded-lg text-sm font-bold transition-all ${formData.type === t.id ? `bg-white shadow-md scale-105 ${t.color}` : 'text-slate-400 hover:bg-slate-200'}`}>{t.label}</button>
+          <button key={t.id} onClick={() => setFormData({ ...formData, type: t.id as any })} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 ${formData.type === t.id ? `bg-white shadow-md scale-100 ${t.color}` : 'text-slate-400 hover:text-slate-600 scale-95'}`}>{t.label}</button>
         ))}
       </div>
 
-      <div className="text-center relative">
-        <input type="number" inputMode="decimal" className="text-6xl font-bold text-center w-full bg-transparent border-none focus:ring-0 placeholder:text-slate-200 text-slate-800 p-0 tracking-tighter" placeholder="0" value={formData.amount || ''} onChange={e => setFormData({ ...formData, amount: parseFloat(e.target.value) })} autoFocus={!isEdit} />
+      <div className="text-center relative py-4">
+        <input type="number" inputMode="decimal" className="text-6xl font-black text-center w-full bg-transparent border-none focus:ring-0 placeholder:text-slate-200 text-slate-800 p-0 tracking-tighter" placeholder="0" value={formData.amount || ''} onChange={e => setFormData({ ...formData, amount: parseFloat(e.target.value) })} autoFocus={!isEdit} />
         <p className="text-xs text-slate-400 mt-2 font-bold uppercase tracking-widest">THB</p>
       </div>
 
-      <div className="bg-slate-50 p-4 rounded-3xl border border-slate-100 space-y-3 shadow-inner">
-         <div className="flex justify-between items-center"><p className="text-xs font-bold text-slate-400 uppercase">{formData.type === 'income' ? 'เข้าบัญชี' : 'จากบัญชี'}</p></div>
-         <select className="w-full p-3 rounded-xl border border-slate-200 text-sm outline-none bg-white mb-2" value={selectedBank} onChange={e => setSelectedBank(e.target.value)}><option value="">-- กรองตามธนาคาร --</option>{banks.map(b => <option key={b} value={b}>{b}</option>)}</select>
-         <select className="w-full p-3 rounded-xl border-2 border-slate-200 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all" value={formData.accountId || ''} onChange={e => setFormData({ ...formData, accountId: e.target.value })}>
+      <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 space-y-3 shadow-inner">
+         <div className="flex justify-between items-center"><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{formData.type === 'income' ? 'เข้าบัญชี' : 'จากบัญชี'}</p></div>
+         <select className="w-full p-3 rounded-xl border border-slate-200 text-sm outline-none bg-white mb-2 shadow-sm focus:border-slate-400 transition-colors" value={selectedBank} onChange={e => setSelectedBank(e.target.value)}><option value="">-- กรองตามธนาคาร --</option>{banks.map(b => <option key={b} value={b}>{b}</option>)}</select>
+         <select className="w-full p-4 rounded-2xl border-2 border-slate-200 text-sm font-bold bg-white outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-900 transition-all shadow-sm" value={formData.accountId || ''} onChange={e => setFormData({ ...formData, accountId: e.target.value })}>
            <option value="">-- เลือกบัญชี --</option>
            {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({safeFormatCurrency(a.balance)})</option>)}
          </select>
       </div>
 
       {formData.type === 'transfer' && (
-        <div className="bg-blue-50 p-4 rounded-3xl border border-blue-100 space-y-2 shadow-inner">
-           <p className="text-xs font-bold text-blue-400 uppercase flex items-center gap-1"><ArrowRightLeft size={12}/> ไปยัง / ชำระบัตร</p>
-           <select className="w-full p-3 rounded-xl border-2 border-blue-200 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.toAccountId || ''} onChange={e => setFormData({ ...formData, toAccountId: e.target.value })}>
+        <div className="bg-blue-50 p-5 rounded-3xl border border-blue-100 space-y-3 shadow-inner">
+           <p className="text-xs font-bold text-blue-500 uppercase flex items-center gap-1 tracking-wider"><ArrowRightLeft size={12}/> ไปยัง / ชำระบัตร</p>
+           <select className="w-full p-4 rounded-2xl border-2 border-blue-200 text-sm font-bold bg-white outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all shadow-sm" value={formData.toAccountId || ''} onChange={e => setFormData({ ...formData, toAccountId: e.target.value })}>
              <option value="">-- เลือกปลายทาง --</option>
              {accounts.filter(a => a.id !== formData.accountId).map(a => <option key={a.id} value={a.id}>{a.type === 'credit' ? '💳' : '🏦'} {a.bank} - {a.name}</option>)}
            </select>
@@ -246,24 +253,24 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
       )}
 
       <div className="space-y-3">
-         <input type="text" placeholder="รายละเอียด (เช่น ค่ากาแฟ)" className="w-full p-4 rounded-2xl border border-slate-200 outline-none focus:ring-2 focus:ring-slate-900 bg-white shadow-sm" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+         <input type="text" placeholder="รายละเอียด (เช่น ค่ากาแฟ)" className="w-full p-4 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-slate-50 focus:border-slate-400 bg-white shadow-sm transition-all font-medium" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
          <div className="flex gap-3">
-           <input type="date" className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm text-center bg-white shadow-sm" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
-           <select className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm bg-white shadow-sm" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>{CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select>
+           <input type="date" className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm text-center bg-white shadow-sm font-medium" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
+           <select className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm bg-white shadow-sm font-medium" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>{CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select>
          </div>
          {formData.type === 'expense' && (
              <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-2xl">
-                <span className="text-xs text-slate-500 pl-2">สถานะ:</span>
-                <div className="flex-1 flex bg-white rounded-xl p-1">
-                   <button onClick={() => setFormData({...formData, status: 'paid'})} className={`flex-1 py-1 rounded-lg text-xs font-bold transition ${formData.status==='paid'?'bg-emerald-100 text-emerald-700':'text-slate-400'}`}>จ่ายแล้ว</button>
-                   <button onClick={() => setFormData({...formData, status: 'unpaid'})} className={`flex-1 py-1 rounded-lg text-xs font-bold transition ${formData.status==='unpaid'?'bg-amber-100 text-amber-700':'text-slate-400'}`}>รอจ่าย</button>
+                <span className="text-xs text-slate-500 pl-2 font-bold">สถานะ:</span>
+                <div className="flex-1 flex bg-white rounded-xl p-1 shadow-sm">
+                   <button onClick={() => setFormData({...formData, status: 'paid'})} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${formData.status==='paid'?'bg-emerald-100 text-emerald-700 shadow-sm':'text-slate-400 hover:bg-slate-50'}`}>จ่ายแล้ว</button>
+                   <button onClick={() => setFormData({...formData, status: 'unpaid'})} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${formData.status==='unpaid'?'bg-amber-100 text-amber-700 shadow-sm':'text-slate-400 hover:bg-slate-50'}`}>รอจ่าย</button>
                 </div>
              </div>
          )}
       </div>
 
       <div className="pt-4 flex gap-3">
-         <button onClick={onCancel} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-bold hover:bg-slate-200 transition">ยกเลิก</button>
+         <button onClick={onCancel} className="flex-1 py-4 bg-white border border-slate-200 text-slate-500 rounded-2xl font-bold hover:bg-slate-50 transition-all">ยกเลิก</button>
          <button onClick={handleSubmit} className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-xl hover:scale-105 active:scale-95 transition-all">{isEdit ? 'บันทึกการแก้ไข' : 'บันทึกรายการ'}</button>
       </div>
     </div>
@@ -304,7 +311,10 @@ export default function App() {
   }, []);
 
   const handleLogin = async () => {
-    try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch (e: any) { alert("Login failed: " + e.message); }
+    try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch (e: any) { 
+        if (e.code === 'auth/unauthorized-domain') alert("Domain not authorized in Firebase Console.");
+        else alert("Login failed: " + e.message); 
+    }
   };
 
   useEffect(() => {
@@ -313,7 +323,6 @@ export default function App() {
     const unsubAcc = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'accounts'), {
       next: (s) => setAccounts(s.docs.map(d => {
         const data = d.data();
-        // Safe mapping to prevent crashes
         return { 
           id: d.id, 
           name: data.name || 'Unknown',
@@ -339,7 +348,6 @@ export default function App() {
     return () => { unsubAcc(); unsubTx(); unsubRec(); };
   }, [user]);
 
-  // Balance Update Logic (Double Entry)
   const updateBalance = async (accId: string, amount: number) => {
     if(!accId) return;
     await updateDoc(doc(db, 'artifacts', appId, 'users', user!.uid, 'accounts', accId), { balance: increment(amount) });
@@ -419,10 +427,8 @@ export default function App() {
         const lines = text.split(/\r\n|\n/).filter(l => l.trim());
         const headerIdx = lines.findIndex(l => l.includes('ประเภทบัญชี'));
         if (headerIdx === -1) throw new Error('ไม่พบหัวตาราง "ประเภทบัญชี"');
-        
         const headers = lines[headerIdx].split(',').map(h => h.trim().replace(/"/g, ''));
         const getCol = (k: string) => headers.findIndex(h => h.includes(k));
-        
         const batch = writeBatch(db);
         let count = 0;
         const existing = new Map(accounts.map(a => [`${a.bank}-${a.name}`, a.id]));
@@ -433,12 +439,10 @@ export default function App() {
           if (row.length < 5) continue;
           const clean = (idx: number) => idx > -1 ? row[idx].replace(/"/g, '').trim() : '';
           const num = (idx: number) => parseFloat(clean(idx).replace(/,/g, '')) || 0;
-
           const name = clean(getCol('ชื่อบัตร')) || 'General';
           const bank = clean(getCol('ธนาคาร')) || 'Other';
           const typeRaw = clean(getCol('ประเภทบัญชี'));
           const balanceVal = num(getCol('ยอดเงินในบัญชี'));
-          // Logic แยกประเภท: ถ้ามียอดเงิน > 0 หรือเป็นบัตรเดบิต = Bank
           let type: AccountType = (typeRaw.includes('บัญชี') || bank.includes('ธนาคาร') || balanceVal > 0 || typeRaw.toLowerCase().includes('debit')) ? 'bank' : typeRaw.includes('เงินสด') ? 'cash' : 'credit';
           const key = `${bank}-${name}`;
           
@@ -456,7 +460,6 @@ export default function App() {
              if (type === 'credit') { 
                 const limitRem = num(getCol('วงเงินคงเหลือ'));
                 const limitUsed = num(getCol('วงเงินที่ใช้ไป'));
-                // ถ้ามีวงเงินคงเหลือ ให้ใช้เลย ถ้าไม่มีให้คำนวณจาก limit - used
                 accData.balance = limitRem > 0 ? limitRem : (limitUsed === 0 ? accData.limit : (accData.limit - limitUsed));
              } else { accData.balance = balanceVal; }
              
@@ -529,7 +532,6 @@ export default function App() {
   const creditBal = accounts.filter(a => a.type === 'credit').reduce((s, a) => s + a.balance, 0);
   const creditUsedReal = creditLimit - creditBal;
 
-  // Chart Data
   const chartData = useMemo(() => {
     const data: Record<string, number> = {};
     filteredTx.filter(t => t.type === 'expense').forEach(t => data[t.category] = (data[t.category] || 0) + t.amount);
@@ -545,7 +547,7 @@ export default function App() {
     return sum;
   }, [filteredTx, accounts]);
 
-  if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400">Loading...</div>;
+  if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400 bg-slate-50">Loading...</div>;
   if (!user) return <LoginScreen onLogin={handleLogin} />;
 
   return (
@@ -653,7 +655,7 @@ export default function App() {
                    <div className="p-4 border-b border-slate-50 bg-slate-50/50"><h3 className="font-bold flex items-center gap-2 text-sm"><UserCircle size={16}/> ข้อมูลส่วนตัว</h3></div>
                    <div className="p-4 text-sm text-slate-600">
                       <p>อีเมล: {user?.email}</p>
-                      <p className="text-xs text-slate-400 mt-1 font-mono bg-slate-100 inline-block px-1 rounded">ID: {user?.uid.slice(0,8)}...</p>
+                      <p className="text-xs text-slate-400 mt-1 font-mono bg-slate-100 inline-block px-1 rounded">ID: {user?.uid?.slice(0,8)}...</p>
                    </div>
                 </div>
 
