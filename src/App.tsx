@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration ---
+// Config ของคุณ (Hardcoded เพื่อความเสถียร)
 const firebaseConfig = {
   apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
   authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
@@ -24,8 +25,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v12.1.0 (Settings Fixed)";
-const appId = 'credit-manager-pro-v12-fixed';
+const APP_VERSION = "v12.1.0 (Fixed & Restore)";
+const appId = 'credit-manager-pro-v12-final';
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -65,6 +66,7 @@ interface RecurringItem {
   accountId: string;
   category: string;
   day: number;
+  monthsLeft?: number; // จำนวนเดือนที่เหลือ
 }
 
 // --- Helpers ---
@@ -90,7 +92,12 @@ const getThaiMonthName = (dateStr: string) => {
   if (!dateStr) return 'ทั้งหมด';
   try {
     const date = new Date(dateStr + '-01');
-    return isNaN(date.getTime()) ? dateStr : date.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
+    if (isNaN(date.getTime())) return dateStr;
+    const months = [
+      "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+      "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+    ];
+    return `${months[date.getMonth()]} ${date.getFullYear() + 543}`;
   } catch (e) { return dateStr; }
 };
 
@@ -224,7 +231,7 @@ const AddTxForm = ({ accounts, categories, initialData, onSave, onCancel, isEdit
     <div className="space-y-6 pb-10">
       <div className="flex bg-slate-100 p-1.5 rounded-2xl shadow-inner">
         {[{ id: 'expense', label: 'รายจ่าย', color: 'text-rose-600' }, { id: 'income', label: 'รายรับ', color: 'text-emerald-600' }, { id: 'transfer', label: 'โอน/ชำระ', color: 'text-blue-600' }].map((t) => (
-          <button key={t.id} onClick={() => setFormData({ ...formData, type: t.id as any })} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 ${formData.type === t.id ? `bg-white shadow-md ${t.color}` : 'text-slate-400'}`}>{t.label}</button>
+          <button key={t.id} onClick={() => setFormData({ ...formData, type: t.id as any })} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${formData.type === t.id ? `bg-white shadow-md ${t.color}` : 'text-slate-400'}`}>{t.label}</button>
         ))}
       </div>
 
@@ -569,7 +576,7 @@ export default function App() {
     return { income, expense, balance: income - expense };
   }, [filteredTx]);
 
-  if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400">Loading...</div>;
+  if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400 bg-slate-50">Loading...</div>;
   if (!user) return <LoginScreen onLogin={handleLogin} onGuest={handleGuestLogin} />;
 
   return (
@@ -712,7 +719,7 @@ export default function App() {
                 </div>
 
                 <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
-                   <button onClick={() => setShowImport(true)} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Upload size={18} className="text-blue-500"/> <span className="text-sm font-medium">นำเข้า CSV (Import)</span></button>
+                   <button onClick={() => setShowImport(true)} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Upload size={18} className="text-blue-500"/> <span className="text-sm font-medium">นำเข้า CSV (Restore)</span></button>
                    <button onClick={handleExportCSV} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Download size={18} className="text-emerald-500"/> <span className="text-sm font-medium">ส่งออก CSV (Backup)</span></button>
                    <button onClick={() => setShowCategoryMgr(true)} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Tag size={18} className="text-amber-500"/> <span className="text-sm font-medium">จัดการหมวดหมู่</span></button>
                    <button onClick={handleLogout} className="w-full p-4 flex items-center gap-3 hover:bg-slate-50 text-left text-rose-600 transition"><LogOut size={18}/> <span className="text-sm font-bold">ออกจากระบบ</span></button>
