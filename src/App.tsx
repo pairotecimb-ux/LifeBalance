@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration ---
-// ✅ Config ที่ใช้งานได้จริง
+// ✅ Config ที่ใช้งานได้จริง (Hardcoded เพื่อความชัวร์)
 const firebaseConfig = {
   apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
   authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
