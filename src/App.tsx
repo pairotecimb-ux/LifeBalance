@@ -12,25 +12,21 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration ---
-const firebaseConfig = {
-  apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
-  authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
-  projectId: 'credit-card-manager-b95c8',
-  storageBucket: 'credit-card-manager-b95c8.firebasestorage.app',
-  messagingSenderId: '486114228268',
-  appId: '1:486114228268:web:6d00ae1430aae1e252b989',
+const firebaseConfig = JSON.parse(__firebase_config || '{}');
+const safeConfig = Object.keys(firebaseConfig).length > 0 ? firebaseConfig : {
+    apiKey: "api-key-placeholder",
+    authDomain: "domain-placeholder",
+    projectId: "project-id",
+    storageBucket: "bucket",
+    messagingSenderId: "sender-id",
+    appId: "app-id"
 };
 
-// Initialize Firebase safely
-let app, auth, db;
-try {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-} catch (e) { console.error("Firebase Init Error", e); }
-
+const app = initializeApp(safeConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 const APP_VERSION = "v13.1.0 (Resurrection)";
-const appId = 'credit-manager-pro-v13';
+const appId = 'credit-manager-pro-v13-1';
 const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/สาธารณูปโภค', 'ผ่อนสินค้า', 'สุขภาพ', 'บันเทิง', 'เงินเดือน', 'อื่นๆ'];
 
 // --- Types ---
@@ -77,37 +73,26 @@ interface RecurringItem {
 const safeNumber = (val: any) => { const num = parseFloat(val); return isNaN(num) ? 0 : num; };
 const formatCurrency = (val: any) => new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 0 }).format(safeNumber(val));
 const formatDate = (date: any) => { try { return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }).format(new Date(date)); } catch (e) { return '-'; } };
-
 const THAI_MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-
 const getThaiMonthName = (dateStr: string) => {
   if (!dateStr) return 'ทั้งหมด';
   try {
-    // Expect YYYY-MM
-    const [y, m] = dateStr.split('-');
-    const year = parseInt(y) + 543;
-    const month = THAI_MONTHS[parseInt(m) - 1];
-    return `${month} ${year}`;
+    const date = new Date(dateStr + '-01');
+    if (isNaN(date.getTime())) return dateStr;
+    return `${THAI_MONTHS[date.getMonth()]} ${date.getFullYear() + 543}`;
   } catch (e) { return dateStr; }
 };
-
 const parseThaiMonthToDate = (str: string) => {
-    // Format expected: "ธ.ค.-68" or similar
     if (!str) return new Date().toISOString().split('T')[0];
     try {
         const parts = str.trim().split(/[-/]/);
         if (parts.length < 2) return new Date().toISOString().split('T')[0];
         let mStr = parts[0], yStr = parts[1];
-        
-        // Handle numeric YYYY-MM directly
-        if(!isNaN(Number(mStr)) && mStr.length === 4) { return `${mStr}-${yStr.padStart(2,'0')}-01`; }
-
+        if(!isNaN(Number(mStr)) && mStr.length === 4) { return `${mStr}-${yStr.padStart(2,'0')}-01`; } // already YYYY-MM
         const shortMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
         const monthIndex = shortMonths.findIndex(m => mStr.includes(m));
         let year = parseInt(yStr);
-        if (year < 100) year += 2500; // BE 2-digit to 4-digit
-        year -= 543; // BE to AD
-        
+        if (year < 100) year += 2500; year -= 543;
         if (monthIndex > -1 && !isNaN(year)) {
              const m = (monthIndex + 1).toString().padStart(2, '0');
              return `${year}-${m}-01`;
@@ -115,7 +100,6 @@ const parseThaiMonthToDate = (str: string) => {
     } catch (e) {}
     return new Date().toISOString().split('T')[0];
 };
-
 const fixScientificNotation = (str: string) => {
     if (!str) return '';
     let cleanStr = str.toUpperCase();
@@ -198,7 +182,7 @@ export default function App() {
     const amount = Number(txForm.amount);
     const isEdit = !!txForm.id;
     
-    // Logic: ตัดเงินทันทีเมื่อบันทึก
+    // Logic: ตัดเงินทันที
     if (isEdit) {
        const old = transactions.find(t => t.id === txForm.id);
        if (old) {
@@ -250,50 +234,73 @@ export default function App() {
           const getCol = (k: string) => headers.findIndex(h => h.includes(k));
           
           const batch = writeBatch(db);
-          const existing = new Map(accounts.map(a => [`${a.bank}-${a.name}`, a.id]));
-          const newCache = new Map();
-          let count = 0;
+          // ใช้ Map เก็บ ID บัญชี เพื่ออัปเดตข้อมูลล่าสุด ไม่สร้างซ้ำ และแก้หนี้เบิ้ล
+          const accMap = new Map();
+          
+          // Loop แรก: จัดการบัญชีก่อน
+          for (let i = headerIdx + 1; i < lines.length; i++) {
+              const row = lines[i].split(','); if(row.length<5) continue;
+              const clean = (i:number) => i > -1 ? row[i].replace(/"/g,'').trim() : '';
+              const num = (i:number) => parseFloat(clean(i).replace(/,/g,'')) || 0;
+              
+              const name = clean(getCol('ชื่อบัตร')) || 'General';
+              const bank = clean(getCol('ธนาคาร')) || 'Other';
+              const typeRaw = clean(getCol('ประเภทบัญชี'));
+              const balanceVal = num(getCol('ยอดเงินในบัญชี'));
+              const type = (typeRaw.includes('บัญชี') || bank.includes('ธนาคาร') || balanceVal > 0) ? 'bank' : typeRaw.includes('เงินสด') ? 'cash' : 'credit';
+              const key = `${bank}-${name}`;
+              
+              // เก็บข้อมูลล่าสุดของแต่ละบัญชีไว้ (บรรทัดล่าสุดใน CSV ถือเป็นข้อมูลล่าสุด)
+              accMap.set(key, {
+                  name, bank, type, color: getBankColor(bank),
+                  accountNumber: fixScientificNotation(clean(getCol('เลขบัตร'))),
+                  totalDebt: num(getCol('ภาระหนี้')),
+                  statementDay: parseInt(clean(getCol('วันสรุปยอด'))) || 0,
+                  dueDay: parseInt(clean(getCol('กำหนดชำระ'))) || 0,
+                  limit: num(getCol('วงเงินทั้งหมด')) || 0,
+                  limitRem: num(getCol('วงเงินคงเหลือ')),
+                  limitUsed: num(getCol('วงเงินที่ใช้ไป')),
+                  balanceVal: balanceVal
+              });
+          }
 
+          // Loop บันทึกบัญชี
+          const accIds = new Map(); // Map key -> firestoreId
+          for (const [key, data] of accMap.entries()) {
+              const existing = accounts.find(a => `${a.bank}-${a.name}` === key);
+              let accId = existing?.id;
+              
+              const accData: any = { ...data };
+              delete accData.limitRem; delete accData.limitUsed; delete accData.balanceVal;
+
+              if (data.type === 'credit') {
+                 // แก้หนี้เบิ้ล: ถ้าใช้ไป 0 ให้ถือว่าเต็มวงเงิน (Balance = Limit)
+                 accData.balance = data.limitRem > 0 ? data.limitRem : (data.limitUsed === 0 ? data.limit : data.limit - data.limitUsed);
+              } else {
+                 accData.balance = data.balanceVal;
+              }
+
+              if (accId) {
+                  batch.update(doc(db,'artifacts',appId,'users',user.uid,'accounts',accId), accData);
+              } else {
+                  const ref = doc(collection(db,'artifacts',appId,'users',user.uid,'accounts'));
+                  batch.set(ref, { ...accData, createdAt: serverTimestamp() });
+                  accId = ref.id;
+              }
+              accIds.set(key, accId);
+          }
+          
+          // Loop บันทึก Transaction
           for (let i = headerIdx + 1; i < lines.length; i++) {
              const row = lines[i].split(','); if(row.length<5) continue;
              const clean = (i:number) => i > -1 ? row[i].replace(/"/g,'').trim() : '';
              const num = (i:number) => parseFloat(clean(i).replace(/,/g,'')) || 0;
-             
              const name = clean(getCol('ชื่อบัตร')) || 'General';
              const bank = clean(getCol('ธนาคาร')) || 'Other';
-             const typeRaw = clean(getCol('ประเภทบัญชี'));
-             const balanceVal = num(getCol('ยอดเงินในบัญชี'));
-             // Logic แยกประเภท: ถ้ามีเงินในบัญชี > 0 = Bank
-             const type = (typeRaw.includes('บัญชี') || bank.includes('ธนาคาร') || balanceVal > 0) ? 'bank' : typeRaw.includes('เงินสด') ? 'cash' : 'credit';
              const key = `${bank}-${name}`;
-             
-             let accId = existing.get(key) || newCache.get(key);
-             if (name && name !== 'N/A') {
-                 const accData: any = { 
-                    name, bank, type, color: getBankColor(bank),
-                    accountNumber: fixScientificNotation(clean(getCol('เลขบัตร'))),
-                    totalDebt: num(getCol('ภาระหนี้')),
-                    statementDay: parseInt(clean(getCol('วันสรุปยอด'))) || 0,
-                    dueDay: parseInt(clean(getCol('กำหนดชำระ'))) || 0
-                 };
-                 accData.limit = num(getCol('วงเงินทั้งหมด')) || 0;
-                 if (type === 'credit') {
-                    const limitRem = num(getCol('วงเงินคงเหลือ'));
-                    const limitUsed = num(getCol('วงเงินที่ใช้ไป'));
-                    // แก้หนี้เบิ้ล: ถ้าใช้ไป 0 ให้ถือว่าเต็มวงเงิน
-                    accData.balance = limitRem > 0 ? limitRem : (limitUsed === 0 ? accData.limit : accData.limit - limitUsed);
-                 } else { accData.balance = balanceVal; }
-                 
-                 if (accId) batch.update(doc(db,'artifacts',appId,'users',user.uid,'accounts',accId), accData);
-                 else {
-                    const ref = doc(collection(db,'artifacts',appId,'users',user.uid,'accounts'));
-                    batch.set(ref, { ...accData, createdAt: serverTimestamp() });
-                    accId = ref.id; newCache.set(key, accId);
-                 }
-             }
-             
-             const desc = clean(getCol('รายละเอียดค่าใช้จ่าย'));
-             const amt = num(getCol('ยอดชำระ'));
+             const accId = accIds.get(key);
+
+             const desc = clean(getCol('รายละเอียดค่าใช้จ่าย')); const amt = num(getCol('ยอดชำระ'));
              if (accId && desc && desc !== 'ไม่มี' && amt > 0) {
                 const txRef = doc(collection(db,'artifacts',appId,'users',user.uid,'transactions'));
                 const mStr = clean(getCol('ธุรกรรมเดือน')>-1?getCol('ธุรกรรมเดือน'):getCol('รายการเดือน'));
@@ -303,15 +310,27 @@ export default function App() {
                    status: clean(getCol('สถานะ')).includes('จ่ายแล้ว') ? 'paid' : 'unpaid',
                    type: 'expense', category: 'Import', createdAt: serverTimestamp()
                 });
-                count++;
              }
           }
+
           await batch.commit();
-          alert(`นำเข้าสำเร็จ ${count} รายการ`);
+          alert(`นำเข้าสำเร็จ`);
           setShowImport(false);
        } catch (e: any) { alert(e.message); } finally { setImporting(false); }
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  const handleExportCSV = () => {
+    if (transactions.length === 0) return alert('ไม่มีข้อมูล');
+    let csv = "ธุรกรรมเดือน,ประเภทบัญชี,ธนาคาร,ชื่อบัตร,เลขบัตร,รายละเอียดค่าใช้จ่าย,ยอดชำระ,สถานะ,วันสรุปยอด,กำหนดชำระ,วงเงินคงเหลือ,ภาระหนี้\n";
+    transactions.forEach(t => {
+      const acc = accounts.find(a => a.id === t.accountId);
+      const mStr = getThaiMonthName(t.date.substring(0, 7));
+      csv += `${mStr},${acc?.type},"${acc?.bank}","${acc?.name}",${acc?.accountNumber},"${t.description}",${t.amount},${t.status},${acc?.statementDay},${acc?.dueDay},${acc?.balance},${acc?.totalDebt}\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'backup.csv'; link.click();
   };
 
   const handleSaveAccount = async () => {
@@ -343,14 +362,22 @@ export default function App() {
      setCategories(newList);
   };
 
-  // Views
+  const handleSaveRecurring = async () => {
+    if (!user || !recForm.description) return;
+    await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'recurring'), { ...recForm, amount: Number(recForm.amount) });
+    setRecForm({ day: 1, amount: '' }); alert('บันทึกแล้ว');
+  };
+
+  const handleUseRecurring = async (item: RecurringItem) => {
+    const today = new Date();
+    const date = new Date(today.getFullYear(), today.getMonth(), item.day).toISOString().split('T')[0];
+    await handleSaveTx({ ...item, date, type: 'expense', status: 'unpaid' } as any);
+    alert('สร้างรายการแล้ว');
+  };
+
+  // Views Data
   const availableMonths = useMemo(() => Array.from(new Set(transactions.map(t => t.date.substring(0, 7)))).sort().reverse(), [transactions]);
-  const filteredTx = useMemo(() => transactions.filter(t => 
-    (!filterMonth || t.date.startsWith(filterMonth)) && 
-    (filterType === 'all' || t.type === filterType) && 
-    (filterStatus === 'all' || t.status === filterStatus) &&
-    (filterBank === 'all' || accounts.find(a=>a.id===t.accountId)?.bank === filterBank)
-  ), [transactions, filterMonth, filterType, filterStatus, filterBank, accounts]);
+  const filteredTx = useMemo(() => transactions.filter(t => (!filterMonth || t.date.startsWith(filterMonth)) && (filterType === 'all' || t.type === filterType) && (filterStatus === 'all' || t.status === filterStatus) && (filterBank === 'all' || accounts.find(a=>a.id===t.accountId)?.bank === filterBank)), [transactions, filterMonth, filterType, filterStatus, filterBank, accounts]);
   
   const totalAssets = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0);
   const totalDebt = accounts.reduce((s, a) => s + (a.totalDebt || 0), 0);
@@ -358,20 +385,22 @@ export default function App() {
   const creditBal = accounts.filter(a => a.type === 'credit').reduce((s, a) => s + a.balance, 0);
   const creditUsedReal = creditLimit - creditBal;
 
+  const bankSummary = useMemo(() => {
+    const sum: Record<string, {income: number, expense: number}> = {};
+    filteredTx.forEach(t => {
+       const bank = accounts.find(a => a.id === t.accountId)?.bank || 'Other';
+       if(!sum[bank]) sum[bank] = {income:0, expense:0};
+       if(t.type === 'income') sum[bank].income += t.amount;
+       if(t.type === 'expense') sum[bank].expense += t.amount;
+    });
+    return sum;
+  }, [filteredTx, accounts]);
+
   const chartData = useMemo(() => {
     const data: Record<string, number> = {};
     filteredTx.filter(t => t.type === 'expense').forEach(t => data[t.category] = (data[t.category] || 0) + t.amount);
     return Object.entries(data).sort((a,b)=>b[1]-a[1]).map(([name, value], i) => ({ name, value, color: ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6'][i%5] }));
   }, [filteredTx]);
-
-  const bankSummary = useMemo(() => {
-    const sum: Record<string, number> = {};
-    filteredTx.filter(t => t.type === 'expense').forEach(t => {
-       const bank = accounts.find(a => a.id === t.accountId)?.bank || 'Other';
-       sum[bank] = (sum[bank] || 0) + t.amount;
-    });
-    return sum;
-  }, [filteredTx, accounts]);
 
   const monthlySummary = useMemo(() => {
     const income = filteredTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
@@ -383,7 +412,7 @@ export default function App() {
   if (!user) return (
     <div className="h-screen flex flex-col items-center justify-center p-6 bg-slate-900 text-white text-center">
       <Wallet size={64} className="mb-6 text-blue-400" />
-      <h1 className="text-3xl font-bold mb-2">Credit Manager V13.1</h1>
+      <h1 className="text-3xl font-bold mb-2">Credit Manager V13</h1>
       <p className="text-slate-400 mb-8">จัดการการเงินให้ง่ายขึ้น</p>
       <div className="space-y-4 w-full max-w-sm">
          <button onClick={handleLogin} className="w-full bg-white text-slate-900 py-3 rounded-xl font-bold flex justify-center items-center gap-2">Google Login</button>
@@ -407,7 +436,7 @@ export default function App() {
              <div className="space-y-6">
                 <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl">
                    <div className="flex justify-between items-center mb-4">
-                     <p className="text-xs text-slate-400">สรุป {filterMonth ? getThaiMonthName(filterMonth + '-01') : '(ทั้งหมด)'}</p>
+                     <p className="text-xs text-slate-400">สรุป ({filterMonth ? getThaiMonthName(filterMonth + '-01') : 'ทั้งหมด'})</p>
                      <select className="bg-white/10 text-xs p-1 rounded text-white border-none" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
                         <option value="">ทั้งหมด</option>
                         {availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m + '-01')}</option>)}
@@ -420,18 +449,17 @@ export default function App() {
                    </div>
                 </div>
                 
-                <div className="bg-white border rounded-2xl p-4 shadow-sm">
-                   <h3 className="font-bold text-sm mb-4 flex items-center gap-2"><IconPieChart size={16}/> สัดส่วนค่าใช้จ่าย</h3>
-                   <div className="flex items-center gap-6">
-                      <div className="w-28 h-28 rounded-full flex-none relative shadow-inner" style={{background: `conic-gradient(${chartData.length ? chartData.map((d,i,arr) => { const prev = arr.slice(0,i).reduce((s,x)=>s+x.value,0); const total = arr.reduce((s,x)=>s+x.value,0); return `${d.color} ${(prev/total)*100}% ${((prev+d.value)/total)*100}%` }).join(',') : '#f1f5f9 0% 100%'})`}}></div>
-                      <div className="flex-1 space-y-2">{chartData.slice(0,4).map((d,i) => (<div key={i} className="flex justify-between text-xs items-center"><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shadow-sm" style={{background:d.color}}></span>{d.name}</span><span className="font-medium">{formatCurrency(d.value)}</span></div>))}</div>
-                   </div>
+                <div className="bg-white border rounded-2xl p-4 shadow-sm flex items-center gap-6">
+                   <div className="w-28 h-28 rounded-full flex-none shadow-inner" style={{background: `conic-gradient(${chartData.length ? chartData.map((d,i,arr) => { const prev = arr.slice(0,i).reduce((s,x)=>s+x.value,0); const total = arr.reduce((s,x)=>s+x.value,0); return `${d.color} ${(prev/total)*100}% ${((prev+d.value)/total)*100}%` }).join(',') : '#f1f5f9 0% 100%'})`}}></div>
+                   <div className="flex-1 space-y-2">{chartData.slice(0,4).map((d,i) => (<div key={i} className="flex justify-between text-xs items-center"><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shadow-sm" style={{background:d.color}}></span>{d.name}</span><span className="font-medium">{formatCurrency(d.value)}</span></div>))}</div>
                 </div>
 
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                    <h3 className="font-bold mb-3 text-sm flex items-center gap-2"><Building size={16}/> สรุปตามธนาคาร ({filterMonth ? getThaiMonthName(filterMonth+'-01') : 'ทั้งหมด'})</h3>
-                   {Object.entries(bankSummary).map(([bank, amt]) => (<div key={bank} className="flex justify-between text-xs mb-2 border-b border-slate-200 pb-2 last:border-0 last:mb-0"><span>{bank}</span><span className="font-bold text-slate-700">{formatCurrency(amt)}</span></div>))}
-                   <div className="mt-2 pt-2 border-t border-slate-300 flex justify-between text-xs font-bold text-slate-800"><span>รวมทั้งหมด</span><span>{formatCurrency(Object.values(bankSummary).reduce((a,b)=>a+b,0))}</span></div>
+                   {Object.entries(bankSummary).map(([bank, amt]) => (
+                     <div key={bank} className="flex justify-between text-xs mb-2 border-b border-slate-200 pb-2 last:border-0 last:mb-0"><span>{bank}</span><div><span className="text-emerald-600 mr-2">+{formatCurrency(amt.income)}</span><span className="text-rose-600">-{formatCurrency(amt.expense)}</span></div></div>
+                   ))}
+                   <div className="mt-2 pt-2 border-t border-slate-300 flex justify-between text-xs font-bold text-slate-800"><span>รวมทั้งหมด</span><span>{formatCurrency(Object.values(bankSummary).reduce((a,b)=>a+(b.income-b.expense),0))}</span></div>
                 </div>
              </div>
            )}
@@ -456,6 +484,7 @@ export default function App() {
                                 <div className="flex gap-2 text-[9px] opacity-60 mt-1"><span>ตัดรอบ: {a.statementDay||'-'}</span><span>จ่าย: {a.dueDay||'-'}</span></div>
                              </>
                          )}
+                         {a.totalDebt ? <div className="mt-1 pt-1 border-t border-white/20 text-[10px] text-rose-200">ภาระหนี้: {formatCurrency(a.totalDebt)}</div> : null}
                       </div>
                     ))}</div>
                   </div>
@@ -470,19 +499,14 @@ export default function App() {
                    <select className="bg-white border rounded-xl text-xs p-2.5 shadow-sm outline-none focus:border-slate-400" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">ทุกสถานะ</option><option value="paid">จ่ายแล้ว</option><option value="unpaid">รอจ่าย</option></select>
                    <select className="bg-white border rounded-xl text-xs p-2.5 shadow-sm outline-none focus:border-slate-400" value={filterBank} onChange={e => setFilterBank(e.target.value)}><option value="all">ทุกธนาคาร</option>{[...new Set(accounts.map(a => a.bank))].map(b => <option key={b} value={b}>{b}</option>)}</select>
                 </div>
-                <div className="space-y-3 mb-8">{filteredTx.map(tx => (
+                <div className="space-y-2 mb-8">{filteredTx.map(tx => (
                   <div key={tx.id} onClick={() => { setTxForm(tx); setShowAddTx(true); }} className="bg-white p-4 border border-slate-100 rounded-2xl flex justify-between items-center cursor-pointer">
                      <div><p className="font-bold text-sm truncate w-40">{tx.category}<br/><span className="text-[10px] text-slate-400 font-normal">{tx.description}</span></p><p className="text-[10px] text-slate-400">{formatDate(tx.date)} • {accounts.find(a=>a.id===tx.accountId)?.name}</p></div>
-                     <div className="text-right"><p className={`font-bold ${tx.type==='income'?'text-emerald-600':'text-slate-900'}`}>{tx.type==='expense'?'-':''}{formatCurrency(tx.amount)}</p><span className={`text-[9px] px-2 py-0.5 rounded-full ${tx.status==='paid' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>{tx.status==='paid'?'จ่ายแล้ว':'รอจ่าย'}</span></div>
+                     <div className="text-right"><p className={`font-bold ${tx.type==='income'?'text-emerald-600':'text-slate-900'}`}>{tx.type==='expense'?'-':''}{formatCurrency(tx.amount)}</p><button onClick={(e)=>{e.stopPropagation();handleToggleStatus(tx)}} className={`text-[9px] px-2 py-0.5 rounded-full ${tx.status==='paid'?'bg-emerald-100 text-emerald-600':'bg-amber-100 text-amber-600'}`}>{tx.status==='paid'?'จ่ายแล้ว':'รอจ่าย'}</button></div>
                   </div>
                 ))}</div>
-                {/* Summary Table at Bottom */}
-                <div className="bg-white border rounded-2xl p-4 shadow-sm mb-8">
-                   <h3 className="font-bold mb-3 text-sm">สรุปยอดแยกธนาคาร</h3>
-                   {Object.entries(bankSummary).map(([bank, amt]) => (
-                     <div key={bank} className="flex justify-between text-xs mb-2 border-b border-slate-100 pb-2"><span>{bank}</span><span className="font-bold">{formatCurrency(amt)}</span></div>
-                   ))}
-                   <div className="flex justify-between text-xs font-bold pt-2 text-slate-900"><span>รวมทั้งหมด</span><span>{formatCurrency(Object.values(bankSummary).reduce((a,b)=>a+b,0))}</span></div>
+                <div className="bg-slate-50 p-4 rounded-xl text-center">
+                   <p className="text-xs text-slate-500">รวมทั้งหมด ({filteredTx.length} รายการ)</p>
                 </div>
              </div>
            )}
@@ -499,23 +523,14 @@ export default function App() {
 
                 {/* Recurring */}
                 <div className="bg-white rounded-2xl border p-4"><h3 className="font-bold text-sm mb-2">รายจ่ายประจำ</h3>
-                   <div className="flex gap-2 mb-2"><input placeholder="รายการ" className="flex-[2] p-2 border rounded text-xs" value={recForm.description} onChange={e=>setRecForm({...recForm, description:e.target.value})}/><input type="number" placeholder="บาท" className="w-16 p-2 border rounded text-xs" onChange={e=>setRecForm({...recForm, amount:e.target.value})}/><select className="w-24 p-2 border rounded text-xs" onChange={e=>setRecForm({...recForm, accountId:e.target.value})}><option value="">ตัดผ่าน</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
-                   <button onClick={async () => { if(recForm.description) { await addDoc(collection(db,'artifacts',appId,'users',user.uid,'recurring'), {...recForm, amount: Number(recForm.amount)}); setRecForm({day:1,amount:''}); } }} className="w-full py-2 bg-slate-900 text-white rounded text-xs">เพิ่ม</button>
-                   <div className="mt-2 space-y-1">{recurringItems.map(r=><div key={r.id} className="flex justify-between text-xs bg-slate-50 p-2 rounded"><span>{r.description} ({formatCurrency(r.amount)}) - {accounts.find(a=>a.id===r.accountId)?.name}</span><div className="flex gap-2"><button onClick={() => handleUseRecurring(r)} className="text-blue-500">สร้าง</button><button onClick={()=>deleteDoc(doc(db,'artifacts',appId,'users',user.uid,'recurring',r.id))} className="text-rose-500">x</button></div></div>)}</div>
+                   <div className="flex gap-2 mb-2"><input placeholder="รายการ" className="flex-[2] p-2 border rounded text-xs" value={recForm.description} onChange={e=>setRecForm({...recForm, description:e.target.value})}/><input type="number" placeholder="บาท" className="w-16 p-2 border rounded text-xs" onChange={e=>setRecForm({...recForm, amount:e.target.value})}/><select className="w-24 p-2 border rounded text-xs" onChange={e=>setRecForm({...recForm, accountId:e.target.value})}><option value="">ตัดผ่าน</option>{accounts.map((a:any)=><option key={a.id} value={a.id}>{a.name}</option>)}</select></div>
+                   <div className="flex gap-2 mb-2"><input type="number" placeholder="วัน" className="w-12 p-2 border rounded text-xs" onChange={e=>setRecForm({...recForm, day:e.target.value})}/><button onClick={handleSaveRecurring} className="flex-1 py-2 bg-slate-900 text-white rounded text-xs">เพิ่ม</button></div>
+                   <div className="mt-2 space-y-1">{recurringItems.map((r:any)=><div key={r.id} className="flex justify-between text-xs bg-slate-50 p-2 rounded"><span>{r.description} ({formatCurrency(r.amount)}) วันที่ {r.day}</span><div className="flex gap-2"><button onClick={() => handleUseRecurring(r)} className="text-blue-500">สร้าง</button><button onClick={()=>deleteDoc(doc(db,'artifacts',appId,'users',user.uid,'recurring',r.id))} className="text-rose-500">x</button></div></div>)}</div>
                 </div>
 
                 <div className="bg-white rounded-2xl border overflow-hidden">
                    <button onClick={() => setShowImport(true)} className="w-full p-4 border-b text-left text-sm flex gap-2"><Upload size={16}/> นำเข้า CSV (Import)</button>
-                   <button onClick={() => {
-                      // Export All Columns
-                      const csv = "Date,Type,Description,Amount,Account,Bank,Status,Category\n" + transactions.map(t => {
-                          const acc = accounts.find(a=>a.id===t.accountId);
-                          return `${t.date},${t.type},"${t.description}",${t.amount},"${acc?.name}","${acc?.bank}",${t.status},${t.category}`;
-                      }).join('\n');
-                      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                      const url = URL.createObjectURL(blob);
-                      const link = document.createElement('a'); link.href = url; link.download = 'backup.csv'; link.click();
-                   }} className="w-full p-4 border-b text-left text-sm flex gap-2"><Download size={16}/> ส่งออก CSV (Backup)</button>
+                   <button onClick={handleExportCSV} className="w-full p-4 border-b text-left text-sm flex gap-2"><Download size={16}/> ส่งออก CSV (Backup)</button>
                    <button onClick={() => signOut(auth)} className="w-full p-4 text-left text-sm flex gap-2 text-rose-600"><LogOut size={16}/> ออกจากระบบ</button>
                 </div>
              </div>
@@ -544,15 +559,6 @@ export default function App() {
                       {txForm.type === 'transfer' && <select className="w-full p-4 rounded-2xl border-2 font-bold text-blue-600" value={txForm.toAccountId || ''} onChange={e => setTxForm({ ...txForm, toAccountId: e.target.value })}><option value="">-- ปลายทาง --</option>{accounts.filter(a => a.id !== txForm.accountId).map(a => <option key={a.id} value={a.id}>{a.bank} - {a.name}</option>)}</select>}
                    </div>
                    <div className="space-y-3"><input type="text" placeholder="รายละเอียด" className="w-full p-4 rounded-2xl border" value={txForm.description || ''} onChange={e => setTxForm({ ...txForm, description: e.target.value })} /><div className="flex gap-3"><input type="date" className="flex-1 p-3 rounded-2xl border text-sm" value={txForm.date} onChange={e => setTxForm({ ...txForm, date: e.target.value })} /><select className="flex-1 p-3 rounded-2xl border text-sm" value={txForm.category} onChange={e => setTxForm({...txForm, category: e.target.value})}>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></div></div>
-                   {txForm.type === 'expense' && (
-                     <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-2xl">
-                        <span className="text-xs text-slate-500 pl-2 font-bold">สถานะ:</span>
-                        <div className="flex-1 flex bg-white rounded-xl p-1 shadow-sm">
-                           <button onClick={() => setTxForm({...txForm, status: 'paid'})} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${txForm.status==='paid'?'bg-emerald-100 text-emerald-700 shadow-sm':'text-slate-400 hover:bg-slate-50'}`}>จ่ายแล้ว</button>
-                           <button onClick={() => setTxForm({...txForm, status: 'unpaid'})} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${txForm.status==='unpaid'?'bg-amber-100 text-amber-700 shadow-sm':'text-slate-400 hover:bg-slate-50'}`}>รอจ่าย</button>
-                        </div>
-                     </div>
-                   )}
                    <button onClick={handleSaveTx} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-xl">บันทึก</button>
                    {txForm.id && <button onClick={handleDeleteTx} className="w-full py-4 text-rose-600 font-bold">ลบรายการ</button>}
                 </div>
@@ -584,7 +590,15 @@ export default function App() {
                    <input type="text" placeholder="เลขบัญชี (Optional)" className="w-full p-3 border rounded-xl" value={editingAccount.accountNumber || ''} onChange={e => setEditingAccount({...editingAccount, accountNumber: e.target.value})}/>
                    <select className="w-full p-3 border rounded-xl bg-white" value={editingAccount.type} onChange={e => setEditingAccount({...editingAccount, type: e.target.value as any})}><option value="bank">ธนาคาร</option><option value="credit">บัตรเครดิต</option><option value="cash">เงินสด</option></select>
                    <input type="number" placeholder="ยอดเงิน/วงเงินคงเหลือ" className="w-full p-3 border rounded-xl font-bold text-lg" value={editingAccount.balance} onChange={e => setEditingAccount({...editingAccount, balance: Number(e.target.value)})}/>
-                   {editingAccount.type === 'credit' && <input type="number" placeholder="วงเงินทั้งหมด" className="w-full p-3 border rounded-xl" value={editingAccount.limit} onChange={e => setEditingAccount({...editingAccount, limit: Number(e.target.value)})}/>}
+                   {editingAccount.type === 'credit' && (
+                       <>
+                         <input type="number" placeholder="วงเงินทั้งหมด" className="w-full p-3 border rounded-xl" value={editingAccount.limit} onChange={e => setEditingAccount({...editingAccount, limit: Number(e.target.value)})}/>
+                         <div className="flex gap-2">
+                             <input type="number" placeholder="วันสรุปยอด" className="flex-1 p-3 border rounded-xl text-center" value={editingAccount.statementDay || ''} onChange={e => setEditingAccount({...editingAccount, statementDay: Number(e.target.value)})}/>
+                             <input type="number" placeholder="วันจ่าย" className="flex-1 p-3 border rounded-xl text-center" value={editingAccount.dueDay || ''} onChange={e => setEditingAccount({...editingAccount, dueDay: Number(e.target.value)})}/>
+                         </div>
+                       </>
+                   )}
                    <div className="flex gap-2 pt-2"><button onClick={() => setEditingAccount(null)} className="flex-1 py-3 bg-slate-100 rounded-xl">ยกเลิก</button><button onClick={handleSaveAccount} className="flex-1 py-3 bg-slate-900 text-white rounded-xl">บันทึก</button></div>
                    {!isNewAccount && <button onClick={handleDeleteAccount} className="w-full py-2 text-rose-500 text-xs">ลบบัญชี</button>}
                 </div>
