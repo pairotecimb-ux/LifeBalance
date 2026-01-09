@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   PieChart as IconPieChart, CreditCard, Plus, Trash2, Wallet, LayoutDashboard, List, Settings, Upload, Download,
   CheckCircle2, XCircle, TrendingUp, DollarSign, Calendar, ChevronRight, Filter,
-  ArrowRightLeft, Landmark, Coins, Edit2, Save, Building, MoreHorizontal, Search, X, LogOut, Lock, Info, Repeat, RefreshCw, UserCircle, BarChart3, GripHorizontal, Tag, User as UserIcon
+  ArrowRightLeft, Landmark, Coins, Edit2, Save, Building, MoreHorizontal, Search, X, LogOut, Lock, Info, Repeat, RefreshCw, UserCircle, Tag, User as UserIcon
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
@@ -21,17 +21,16 @@ const firebaseConfig = {
   appId: '1:486114228268:web:6d00ae1430aae1e252b989',
 };
 
-// Initialize safely
+// Initialize Safely
 let app, auth, db;
 try {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
-} catch (e) { console.error(e); }
+} catch (e) { console.error("Firebase Init Error", e); }
 
-const APP_VERSION = "v12.2.0 (Ultimate Fix)";
+const APP_VERSION = "v12.2.0 (Final Fix)";
 const appId = 'credit-manager-pro-v12-final';
-const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/สาธารณูปโภค', 'ผ่อนสินค้า', 'สุขภาพ', 'บันเทิง', 'เงินเดือน', 'อื่นๆ'];
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -92,36 +91,36 @@ const formatDate = (date: any) => {
   } catch (e) { return '-'; }
 };
 
+const THAI_MONTHS = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+];
+
 const getThaiMonthName = (dateStr: string) => {
   if (!dateStr) return 'ทั้งหมด';
   try {
-    const date = new Date(dateStr + '-01');
-    if (isNaN(date.getTime())) return dateStr;
-    const months = [
-      "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-      "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
-    ];
-    return `${months[date.getMonth()]} ${date.getFullYear() + 543}`;
+    const [y, m] = dateStr.split('-');
+    return `${THAI_MONTHS[parseInt(m) - 1]} ${parseInt(y) + 543}`;
   } catch (e) { return dateStr; }
 };
 
+// Parser: ธ.ค.-68 -> 2025-12-01
 const parseThaiMonthToDate = (str: string) => {
   if (!str) return new Date().toISOString().split('T')[0];
   try {
     const parts = str.trim().split(/[-/]/); 
     if (parts.length < 2) return new Date().toISOString().split('T')[0];
 
-    // Handle "ธ.ค.-68"
     let mStr = parts[0];
     let yStr = parts[1];
     
-    // Check if numeric YYYY-MM
+    // Swap if format is YYYY-MM
     if(!isNaN(Number(mStr)) && mStr.length === 4) {
-       return `${mStr}-${yStr}-01`;
+       return `${mStr}-${yStr.padStart(2,'0')}-01`;
     }
 
-    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-    const monthIndex = months.findIndex(m => mStr.includes(m));
+    const shortMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const monthIndex = shortMonths.findIndex(m => mStr.includes(m));
     
     let year = parseInt(yStr);
     if (year < 100) year += 2500; 
@@ -160,6 +159,8 @@ const BANK_COLORS: Record<string, string> = {
 };
 const getBankColor = (bankName: string) => BANK_COLORS[Object.keys(BANK_COLORS).find(k => bankName?.toLowerCase().includes(k.toLowerCase())) || 'default'];
 
+const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/สาธารณูปโภค', 'ผ่อนสินค้า', 'สุขภาพ', 'บันเทิง', 'เงินเดือน', 'อื่นๆ'];
+
 // --- Components ---
 
 const LoginScreen = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () => void }) => (
@@ -170,8 +171,9 @@ const LoginScreen = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () =>
       <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl">
         <Wallet className="w-10 h-10 text-white" />
       </div>
-      <h1 className="text-3xl font-bold mb-2">Credit Manager V12</h1>
-      <div className="space-y-3 mt-8">
+      <h1 className="text-3xl font-bold mb-2">Credit Manager</h1>
+      <p className="text-sm text-slate-400 mb-6">จัดการการเงินของคุณได้ง่ายๆ</p>
+      <div className="space-y-3 mt-4">
         <button onClick={onLogin} className="w-full bg-white text-slate-900 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:scale-105 transition-all">
           <span className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-blue-600">G</span> Google Login
         </button>
@@ -259,7 +261,7 @@ const AddTxForm = ({ accounts, categories, initialData, onSave, onCancel, isEdit
          </div>
          <select className="w-full p-4 rounded-2xl border-2 border-slate-200 text-sm font-bold bg-white outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-900 transition-all shadow-sm" value={formData.accountId || ''} onChange={e => setFormData({ ...formData, accountId: e.target.value })}>
            <option value="">-- เลือกบัญชี --</option>
-           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({safeFormatCurrency(a.balance)})</option>)}
+           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({formatCurrency(a.balance)})</option>)}
          </select>
       </div>
 
@@ -437,6 +439,7 @@ export default function App() {
      if (!user || !newCategory) return;
      const newList = [...categories, newCategory];
      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'categories'), { list: newList });
+     setCategories(newList);
      setNewCategory('');
   };
 
@@ -444,6 +447,7 @@ export default function App() {
      if (!user || !confirm(`ลบหมวดหมู่ ${cat}?`)) return;
      const newList = categories.filter(c => c !== cat);
      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'categories'), { list: newList });
+     setCategories(newList);
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -555,7 +559,12 @@ export default function App() {
 
   // Views
   const availableMonths = useMemo(() => Array.from(new Set(transactions.map(t => t.date.substring(0, 7)))).sort().reverse(), [transactions]);
-  const filteredTx = useMemo(() => transactions.filter(t => (!filterMonth || t.date.startsWith(filterMonth)) && (filterType === 'all' || t.type === filterType) && (filterStatus === 'all' || t.status === filterStatus)), [transactions, filterMonth, filterType, filterStatus]);
+  const filteredTx = useMemo(() => transactions.filter(t => 
+    (!filterMonth || t.date.startsWith(filterMonth)) && 
+    (filterType === 'all' || t.type === filterType) && 
+    (filterStatus === 'all' || t.status === filterStatus) &&
+    (walletFilterBank === 'all' || accounts.find(a => a.id === t.accountId)?.bank === walletFilterBank)
+  ), [transactions, filterMonth, filterType, filterStatus, walletFilterBank, accounts]);
   
   const totalAssets = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0);
   const totalDebt = accounts.reduce((s, a) => s + (a.totalDebt || 0), 0);
@@ -593,6 +602,7 @@ export default function App() {
         {/* Header */}
         <div className="px-6 pt-12 pb-2 bg-white flex justify-between items-center shrink-0 z-20">
            <div><p className="text-[10px] text-slate-400 uppercase">My Wallet</p><p className="font-bold text-lg">Dashboard</p></div>
+           {/* ✅ ปุ่มตั้งค่า แก้ไขแล้ว */}
            <button onClick={() => setActiveTab('settings')} className="p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition"><Settings size={20}/></button>
         </div>
 
@@ -697,6 +707,7 @@ export default function App() {
              <div className="pt-4">
                 <h2 className="text-2xl font-bold mb-4">ตั้งค่า</h2>
                 
+                {/* Profile Section with Safe Check */}
                 <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden mb-4 shadow-sm">
                    <div className="p-4 border-b border-slate-50 bg-slate-50/50"><h3 className="font-bold flex items-center gap-2 text-sm"><UserCircle size={16}/> ข้อมูลส่วนตัว</h3></div>
                    <div className="p-4 text-sm text-slate-600">
@@ -732,7 +743,7 @@ export default function App() {
                 </div>
 
                 <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
-                   <button onClick={() => setShowImport(true)} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Upload size={18} className="text-blue-500"/> <span className="text-sm font-medium">นำเข้า CSV (Import)</span></button>
+                   <button onClick={() => setShowImport(true)} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Upload size={18} className="text-blue-500"/> <span className="text-sm font-medium">นำเข้า CSV (Restore)</span></button>
                    <button onClick={handleExportCSV} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Download size={18} className="text-emerald-500"/> <span className="text-sm font-medium">ส่งออก CSV (Backup)</span></button>
                    <button onClick={() => setShowCategoryMgr(true)} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Tag size={18} className="text-amber-500"/> <span className="text-sm font-medium">จัดการหมวดหมู่</span></button>
                    <button onClick={handleLogout} className="w-full p-4 flex items-center gap-3 hover:bg-slate-50 text-left text-rose-600 transition"><LogOut size={18}/> <span className="text-sm font-bold">ออกจากระบบ</span></button>
