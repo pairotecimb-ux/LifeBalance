@@ -24,8 +24,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v7.0.0 (Ultimate)";
-const appId = 'credit-manager-pro-v7';
+const APP_VERSION = "v7.0.1 (Stable Fixed)";
+const appId = 'credit-manager-pro-v7-stable';
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -67,37 +67,58 @@ interface RecurringItem {
   day: number;
 }
 
-// --- Helpers ---
-const formatCurrency = (val: number) => new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(val);
-const formatDate = (date: string) => date ? new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }).format(new Date(date)) : '-';
+// --- Helpers (Safe Versions to prevent White Screen) ---
+const safeFormatCurrency = (val: any) => {
+  if (val === undefined || val === null || isNaN(Number(val))) return '0.00';
+  try {
+    return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(val));
+  } catch (e) { return '0.00'; }
+};
+
+const safeFormatDate = (date: any) => {
+  if (!date) return '-';
+  try {
+    return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }).format(new Date(date));
+  } catch (e) { return '-'; }
+};
+
 const getThaiMonthName = (dateStr: string) => {
   if (!dateStr) return 'ทั้งหมด';
-  const date = new Date(dateStr + '-01'); // Ensure valid date
-  return isNaN(date.getTime()) ? dateStr : date.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
+  try {
+    const date = new Date(dateStr + '-01');
+    return isNaN(date.getTime()) ? dateStr : date.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
+  } catch (e) { return dateStr; }
 };
 
 const parseThaiMonthToDate = (str: string) => {
   if (!str) return new Date().toISOString().split('T')[0];
-  const parts = str.trim().split(/[-/]/); 
-  if (parts.length < 2) return new Date().toISOString().split('T')[0];
-  const mStr = parts[0];
-  const yStr = parts[1];
-  const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-  const monthIndex = months.findIndex(m => mStr.includes(m));
-  let year = parseInt(yStr);
-  if (year < 100) year += 2500; 
-  year -= 543; 
-  if (monthIndex > -1 && !isNaN(year)) {
-    const m = (monthIndex + 1).toString().padStart(2, '0');
-    return `${year}-${m}-01`; 
-  }
+  try {
+    const parts = str.trim().split(/[-/]/); 
+    if (parts.length < 2) return new Date().toISOString().split('T')[0];
+    const mStr = parts[0];
+    const yStr = parts[1];
+    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const monthIndex = months.findIndex(m => mStr.includes(m));
+    let year = parseInt(yStr);
+    if (year < 100) year += 2500; 
+    year -= 543; 
+    if (monthIndex > -1 && !isNaN(year)) {
+      const m = (monthIndex + 1).toString().padStart(2, '0');
+      return `${year}-${m}-01`; 
+    }
+  } catch (e) {}
   return new Date().toISOString().split('T')[0];
 };
 
 const fixScientificNotation = (str: string) => {
   if (!str) return '';
-  if (str.toUpperCase().includes('E') || str.includes('+')) {
-    const num = Number(str);
+  let cleanStr = str.toUpperCase();
+  // Fix cases like "4.5+15" -> "4.5E+15"
+  if (cleanStr.includes('+') && !cleanStr.includes('E')) {
+     cleanStr = cleanStr.replace('+', 'E+');
+  }
+  if (cleanStr.includes('E')) {
+    const num = Number(cleanStr);
     if (!isNaN(num)) return num.toLocaleString('fullwide', { useGrouping: false });
   }
   return str;
@@ -152,7 +173,7 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
     <div className="space-y-1">
       <div className="flex justify-between items-end">
         <p className="text-xs opacity-70">{account.type === 'credit' ? 'วงเงินคงเหลือ' : 'ยอดเงินในบัญชี'}</p>
-        <p className="text-xl font-bold">{formatCurrency(account.balance)}</p>
+        <p className="text-xl font-bold">{safeFormatCurrency(account.balance)}</p>
       </div>
       {account.type === 'credit' && account.limit && account.limit > 0 && (
         <>
@@ -160,8 +181,8 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
              <div className="bg-white h-full" style={{ width: `${Math.min(((account.limit - account.balance) / account.limit) * 100, 100)}%` }}></div>
           </div>
           <div className="flex justify-between text-[10px] opacity-60 pt-1">
-             <span>ใช้ไป: {formatCurrency((account.limit || 0) - account.balance)}</span>
-             <span>วงเงิน: {formatCurrency(account.limit || 0)}</span>
+             <span>ใช้ไป: {safeFormatCurrency((account.limit || 0) - account.balance)}</span>
+             <span>วงเงิน: {safeFormatCurrency(account.limit || 0)}</span>
           </div>
           {(account.statementDay || account.dueDay) && (
              <div className="flex gap-2 text-[9px] opacity-50 mt-1">
@@ -173,50 +194,25 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
       )}
       {account.totalDebt !== undefined && account.totalDebt > 0 && (
          <div className="mt-2 pt-2 border-t border-white/10">
-           <p className="text-[10px] text-rose-200 flex items-center gap-1"><TrendingUp size={10} className="rotate-180"/> ภาระหนี้: {formatCurrency(account.totalDebt)}</p>
+           <p className="text-[10px] text-rose-200 flex items-center gap-1"><TrendingUp size={10} className="rotate-180"/> ภาระหนี้: {safeFormatCurrency(account.totalDebt)}</p>
          </div>
       )}
     </div>
   </div>
 );
 
-const SimplePieChart = ({ data }: { data: { name: string, value: number, color: string }[] }) => {
-  const total = data.reduce((s, i) => s + i.value, 0);
-  if(total === 0) return <div className="h-32 flex items-center justify-center text-xs text-slate-400">ไม่มีข้อมูล</div>;
-  
-  let accumulated = 0;
-  const gradients = data.map(item => {
-    const start = (accumulated / total) * 100;
-    accumulated += item.value;
-    const end = (accumulated / total) * 100;
-    return `${item.color} ${start}% ${end}%`;
-  }).join(', ');
-
-  return (
-    <div className="flex items-center gap-4 py-2">
-      <div className="w-24 h-24 rounded-full flex-none relative" style={{ background: `conic-gradient(${gradients})` }}>
-         <div className="absolute inset-2 bg-slate-900 rounded-full flex items-center justify-center">
-            <span className="text-[10px] text-slate-400">Total<br/>Expenses</span>
-         </div>
-      </div>
-      <div className="flex-1 space-y-1">
-         {data.slice(0, 4).map((item, i) => (
-           <div key={i} className="flex justify-between text-xs">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{background: item.color}}></span> {item.name}</span>
-              <span>{Math.round((item.value/total)*100)}%</span>
-           </div>
-         ))}
-      </div>
-    </div>
-  );
-};
-
 const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accounts: Account[], initialData: Partial<Transaction>, onSave: (data: Partial<Transaction>) => void, onCancel: () => void, isEdit: boolean }) => {
   const [formData, setFormData] = useState(initialData);
   const [selectedBank, setSelectedBank] = useState('');
-  
+  const [selectedType, setSelectedType] = useState<string>('');
+
+  // Reset form when initialData changes
+  useEffect(() => {
+    setFormData(initialData);
+  }, [initialData]);
+
   const banks = useMemo(() => Array.from(new Set(accounts.map(a => a.bank))).sort(), [accounts]);
-  const filteredAccounts = useMemo(() => accounts.filter(a => (!selectedBank || a.bank === selectedBank)), [accounts, selectedBank]);
+  const filteredAccounts = useMemo(() => accounts.filter(a => (!selectedBank || a.bank === selectedBank) && (!selectedType || a.type === selectedType)), [accounts, selectedBank, selectedType]);
 
   const handleSubmit = () => {
     if(!formData.amount || !formData.accountId) return alert('กรุณาระบุยอดเงินและบัญชี');
@@ -239,10 +235,13 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
       {/* Simplified Account Select */}
       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3">
          <div className="flex justify-between items-center"><p className="text-xs font-bold text-slate-400 uppercase">{formData.type === 'income' ? 'เข้าบัญชี' : 'จากบัญชี'}</p></div>
-         <select className="w-full p-3 rounded-xl border border-slate-200 text-sm outline-none bg-white mb-2" value={selectedBank} onChange={e => setSelectedBank(e.target.value)}><option value="">-- กรองตามธนาคาร (ทั้งหมด) --</option>{banks.map(b => <option key={b} value={b}>{b}</option>)}</select>
+         <div className="grid grid-cols-2 gap-2">
+           <select className="p-3 rounded-xl border border-slate-200 text-sm outline-none bg-white" value={selectedBank} onChange={e => { setSelectedBank(e.target.value); setSelectedType(''); }}><option value="">ทุกธนาคาร</option>{banks.map(b => <option key={b} value={b}>{b}</option>)}</select>
+           <select className="p-3 rounded-xl border border-slate-200 text-sm outline-none bg-white" value={selectedType} onChange={e => setSelectedType(e.target.value)}><option value="">ทุกประเภท</option><option value="bank">บัญชี</option><option value="credit">บัตรเครดิต</option><option value="cash">เงินสด</option></select>
+         </div>
          <select className="w-full p-3 rounded-xl border border-slate-200 text-sm font-semibold bg-white outline-none focus:ring-2 focus:ring-slate-900" value={formData.accountId || ''} onChange={e => setFormData({ ...formData, accountId: e.target.value })}>
            <option value="">-- เลือกบัญชี --</option>
-           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({formatCurrency(a.balance)})</option>)}
+           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({safeFormatCurrency(a.balance)})</option>)}
          </select>
       </div>
 
@@ -300,6 +299,7 @@ export default function App() {
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [walletFilterBank, setWalletFilterBank] = useState<string>('all'); // New Wallet Filter
+  const [importing, setImporting] = useState(false);
 
   // Default New Tx
   const defaultTx: Partial<Transaction> = { type: 'expense', amount: 0, date: new Date().toISOString().split('T')[0], category: 'ทั่วไป', status: 'unpaid' };
@@ -326,7 +326,6 @@ export default function App() {
     return () => { unsubAcc(); unsubTx(); unsubRec(); };
   }, [user]);
 
-  // Balance Update Logic
   const updateBalance = async (accId: string, amount: number) => {
     if(!accId) return;
     await updateDoc(doc(db, 'artifacts', appId, 'users', user!.uid, 'accounts', accId), { balance: increment(amount) });
@@ -357,10 +356,6 @@ export default function App() {
   const handleToggleStatus = async (tx: Transaction) => {
      if (!user) return;
      const newStatus = tx.status === 'paid' ? 'unpaid' : 'paid';
-     const acc = accounts.find(a => a.id === tx.accountId);
-     // Note: In V7, we decided expense ALWAYS reduces balance (limit). Status is just a tag. 
-     // EXCEPT if user wants "Paid" to mean "Paid back to card". But usually we use Transfer for that.
-     // Sticking to simple logic: Status change DOES NOT affect balance in this version to prevent confusion. 
      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', tx.id), { status: newStatus });
   };
 
@@ -463,7 +458,7 @@ export default function App() {
         await batch.commit();
         alert(`Imported ${count} items`);
         setShowImport(false);
-      } catch (e: any) { alert(e.message); }
+      } catch (e: any) { alert(e.message); } finally { setImporting(false); }
     };
     reader.readAsArrayBuffer(file);
   };
@@ -543,10 +538,10 @@ export default function App() {
                   <div className="bg-slate-900 text-white p-4 rounded-2xl col-span-2 shadow-xl relative overflow-hidden">
                      <div className="relative z-10">
                         <p className="text-xs text-slate-400 mb-1">ความมั่งคั่งสุทธิ</p>
-                        <h1 className="text-3xl font-bold">{formatCurrency(totalAssets - (creditLimit - creditBal) - totalDebt)}</h1>
+                        <h1 className="text-3xl font-bold">{safeFormatCurrency(totalAssets - (creditLimit - creditBal) - totalDebt)}</h1>
                         <div className="flex gap-4 mt-4">
-                           <div className="flex-1 bg-white/10 p-2 rounded-lg"><p className="text-[10px] text-emerald-300">สินทรัพย์</p><p className="font-bold">{formatCurrency(totalAssets)}</p></div>
-                           <div className="flex-1 bg-white/10 p-2 rounded-lg"><p className="text-[10px] text-rose-300">หนี้สิน</p><p className="font-bold">{formatCurrency((creditLimit - creditBal) + totalDebt)}</p></div>
+                           <div className="flex-1 bg-white/10 p-2 rounded-lg"><p className="text-[10px] text-emerald-300">สินทรัพย์</p><p className="font-bold">{safeFormatCurrency(totalAssets)}</p></div>
+                           <div className="flex-1 bg-white/10 p-2 rounded-lg"><p className="text-[10px] text-rose-300">หนี้สิน</p><p className="font-bold">{safeFormatCurrency((creditLimit - creditBal) + totalDebt)}</p></div>
                         </div>
                      </div>
                      <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-blue-500 rounded-full blur-3xl opacity-20"></div>
@@ -556,12 +551,12 @@ export default function App() {
                    <h3 className="font-bold text-sm mb-4">สัดส่วนค่าใช้จ่าย</h3>
                    <div className="flex items-center gap-4">
                       <div className="w-24 h-24 rounded-full flex-none" style={{background: `conic-gradient(${chartData.map((d,i,arr) => { const prev = arr.slice(0,i).reduce((s,x)=>s+x.value,0); return `${d.color} ${(prev/chartData.reduce((s,x)=>s+x.value,0))*100}% ${((prev+d.value)/chartData.reduce((s,x)=>s+x.value,0))*100}%` }).join(',')})`}}></div>
-                      <div className="flex-1 space-y-1">{chartData.slice(0,4).map((d,i) => <div key={i} className="flex justify-between text-xs"><span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{background:d.color}}></span>{d.name}</span><span>{formatCurrency(d.value)}</span></div>)}</div>
+                      <div className="flex-1 space-y-1">{chartData.slice(0,4).map((d,i) => <div key={i} className="flex justify-between text-xs"><span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{background:d.color}}></span>{d.name}</span><span>{safeFormatCurrency(d.value)}</span></div>)}</div>
                    </div>
                 </div>
                 <div className="bg-slate-50 p-4 rounded-xl">
                    <h3 className="font-bold mb-3 text-sm">สรุปยอดจ่ายตามธนาคาร</h3>
-                   {Object.entries(bankSummary).map(([bank, amt]) => (<div key={bank} className="flex justify-between text-xs mb-1 border-b border-slate-200 pb-1 last:border-0"><span>{bank}</span><span className="font-bold">{formatCurrency(amt)}</span></div>))}
+                   {Object.entries(bankSummary).map(([bank, amt]) => (<div key={bank} className="flex justify-between text-xs mb-1 border-b border-slate-200 pb-1 last:border-0"><span>{bank}</span><span className="font-bold">{safeFormatCurrency(amt)}</span></div>))}
                 </div>
              </div>
            )}
@@ -595,10 +590,10 @@ export default function App() {
                      <div className={`absolute left-0 top-0 bottom-0 w-1 ${tx.status === 'paid' ? 'bg-emerald-400' : 'bg-amber-400'}`}></div>
                      <div className="pl-3">
                        <p className="font-bold text-sm truncate w-40">{tx.description}</p>
-                       <p className="text-[10px] text-slate-400">{formatDate(tx.date)} • {accounts.find(a=>a.id===tx.accountId)?.name}</p>
+                       <p className="text-[10px] text-slate-400">{safeFormatDate(tx.date)} • {accounts.find(a=>a.id===tx.accountId)?.name}</p>
                      </div>
                      <div className="text-right">
-                       <p className={`font-bold ${tx.type==='income'?'text-emerald-600':'text-slate-900'}`}>{tx.type==='expense'?'-':''}{formatCurrency(tx.amount)}</p>
+                       <p className={`font-bold ${tx.type==='income'?'text-emerald-600':'text-slate-900'}`}>{tx.type==='expense'?'-':''}{safeFormatCurrency(tx.amount)}</p>
                        <span className={`text-[9px] px-1.5 py-0.5 rounded ${tx.status==='paid' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>{tx.status==='paid'?'จ่ายแล้ว':'รอจ่าย'}</span>
                      </div>
                   </div>
@@ -635,7 +630,7 @@ export default function App() {
                            <div key={r.id} className="flex justify-between text-xs text-slate-500 bg-slate-50 p-2 rounded border border-slate-100">
                               <div><span className="font-bold">{r.description}</span> <span className="text-slate-400">(วันที่ {r.day})</span></div>
                               <div className="flex items-center gap-2">
-                                 <span>{formatCurrency(r.amount)}</span>
+                                 <span>{safeFormatCurrency(r.amount)}</span>
                                  <button onClick={() => handleUseRecurring(r)} className="px-2 py-1 bg-blue-100 text-blue-600 rounded">สร้าง</button>
                                  <button onClick={() => deleteDoc(doc(db,'artifacts',appId,'users',user.uid,'recurring',r.id))} className="text-rose-500"><X size={14}/></button>
                               </div>
