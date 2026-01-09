@@ -2,17 +2,16 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   PieChart as IconPieChart, CreditCard, Plus, Trash2, Wallet, LayoutDashboard, List, Settings, Upload, Download,
   CheckCircle2, XCircle, TrendingUp, DollarSign, Calendar, ChevronRight, Filter,
-  ArrowRightLeft, Landmark, Coins, Edit2, Save, Building, MoreHorizontal, Search, X, LogOut, Lock, Info, Repeat, RefreshCw, UserCircle, BarChart3, GripHorizontal, Tag, User as UserIcon
+  ArrowRightLeft, Landmark, Coins, Edit2, Save, Building, MoreHorizontal, Search, X, LogOut, Lock, Info, Repeat, RefreshCw, UserCircle, Tag, User as UserIcon
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import {
   getFirestore, collection, addDoc, query, onSnapshot, deleteDoc, doc, updateDoc,
-  serverTimestamp, writeBatch, orderBy, increment, setDoc, getDoc
+  serverTimestamp, writeBatch, orderBy, increment, setDoc
 } from 'firebase/firestore';
 
 // --- Configuration ---
-// Config ของคุณ (Hardcoded เพื่อความเสถียร)
 const firebaseConfig = {
   apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
   authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
@@ -545,15 +544,7 @@ export default function App() {
                    <input type="text" placeholder="เลขบัญชี (Optional)" className="w-full p-3 border rounded-xl" value={editingAccount.accountNumber || ''} onChange={e => setEditingAccount({...editingAccount, accountNumber: e.target.value})}/>
                    <select className="w-full p-3 border rounded-xl bg-white" value={editingAccount.type} onChange={e => setEditingAccount({...editingAccount, type: e.target.value as any})}><option value="bank">ธนาคาร</option><option value="credit">บัตรเครดิต</option><option value="cash">เงินสด</option></select>
                    <input type="number" placeholder="ยอดเงิน/วงเงินคงเหลือ" className="w-full p-3 border rounded-xl font-bold text-lg" value={editingAccount.balance} onChange={e => setEditingAccount({...editingAccount, balance: Number(e.target.value)})}/>
-                   {editingAccount.type === 'credit' && (
-                       <>
-                         <input type="number" placeholder="วงเงินทั้งหมด" className="w-full p-3 border rounded-xl" value={editingAccount.limit} onChange={e => setEditingAccount({...editingAccount, limit: Number(e.target.value)})}/>
-                         <div className="flex gap-2">
-                             <input type="number" placeholder="วันสรุปยอด" className="flex-1 p-3 border rounded-xl text-center" value={editingAccount.statementDay || ''} onChange={e => setEditingAccount({...editingAccount, statementDay: Number(e.target.value)})}/>
-                             <input type="number" placeholder="วันจ่าย" className="flex-1 p-3 border rounded-xl text-center" value={editingAccount.dueDay || ''} onChange={e => setEditingAccount({...editingAccount, dueDay: Number(e.target.value)})}/>
-                         </div>
-                       </>
-                   )}
+                   {editingAccount.type === 'credit' && <input type="number" placeholder="วงเงินทั้งหมด" className="w-full p-3 border rounded-xl" value={editingAccount.limit} onChange={e => setEditingAccount({...editingAccount, limit: Number(e.target.value)})}/>}
                    <div className="flex gap-2 pt-2"><button onClick={() => setEditingAccount(null)} className="flex-1 py-3 bg-slate-100 rounded-xl">ยกเลิก</button><button onClick={handleSaveAccount} className="flex-1 py-3 bg-slate-900 text-white rounded-xl">บันทึก</button></div>
                    {!isNewAccount && <button onClick={handleDeleteAccount} className="w-full py-2 text-rose-500 text-xs">ลบบัญชี</button>}
                 </div>
