@@ -21,13 +21,16 @@ const firebaseConfig = {
   appId: '1:486114228268:web:6d00ae1430aae1e252b989',
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+// Initialize safely
+let app, auth, db;
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (e) { console.error(e); }
+
 const APP_VERSION = "v12.2.0 (Ultimate Fix)";
 const appId = 'credit-manager-pro-v12-final';
-
-// --- Constants ---
 const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/สาธารณูปโภค', 'ผ่อนสินค้า', 'สุขภาพ', 'บันเทิง', 'เงินเดือน', 'อื่นๆ'];
 
 // --- Types ---
@@ -161,6 +164,8 @@ const getBankColor = (bankName: string) => BANK_COLORS[Object.keys(BANK_COLORS).
 
 const LoginScreen = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () => void }) => (
   <div className="h-full flex flex-col items-center justify-center p-6 bg-slate-900 text-white text-center relative overflow-hidden">
+    <div className="absolute top-[-20%] left-[-20%] w-[300px] h-[300px] bg-blue-600/30 rounded-full blur-[80px] animate-pulse"></div>
+    <div className="absolute bottom-[-20%] right-[-20%] w-[300px] h-[300px] bg-purple-600/30 rounded-full blur-[80px] animate-pulse delay-700"></div>
     <div className="relative z-10 w-full max-w-sm backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl">
       <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl">
         <Wallet className="w-10 h-10 text-white" />
@@ -254,7 +259,7 @@ const AddTxForm = ({ accounts, categories, initialData, onSave, onCancel, isEdit
          </div>
          <select className="w-full p-4 rounded-2xl border-2 border-slate-200 text-sm font-bold bg-white outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-900 transition-all shadow-sm" value={formData.accountId || ''} onChange={e => setFormData({ ...formData, accountId: e.target.value })}>
            <option value="">-- เลือกบัญชี --</option>
-           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({formatCurrency(a.balance)})</option>)}
+           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({safeFormatCurrency(a.balance)})</option>)}
          </select>
       </div>
 
@@ -272,10 +277,7 @@ const AddTxForm = ({ accounts, categories, initialData, onSave, onCancel, isEdit
          <input type="text" placeholder="รายละเอียด (เช่น ค่ากาแฟ)" className="w-full p-4 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-slate-50 focus:border-slate-400 bg-white shadow-sm transition-all font-medium" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
          <div className="flex gap-3">
            <input type="date" className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm text-center bg-white shadow-sm font-medium" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
-           <select className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm bg-white shadow-sm font-medium" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
-             <option value="">-- หมวดหมู่ --</option>
-             {categories.map(c=><option key={c} value={c}>{c}</option>)}
-           </select>
+           <select className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm bg-white shadow-sm font-medium" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
          </div>
          {formData.type === 'expense' && (
              <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-2xl">
@@ -321,12 +323,12 @@ export default function App() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [walletFilterBank, setWalletFilterBank] = useState<string>('all'); 
   const [importing, setImporting] = useState(false);
+  const [newCategory, setNewCategory] = useState('');
 
   // Default New Tx
   const defaultTx: Partial<Transaction> = { type: 'expense', amount: 0, date: new Date().toISOString().split('T')[0], category: 'ทั่วไป', status: 'unpaid' };
   const [newTxData, setNewTxData] = useState<Partial<Transaction>>(defaultTx);
   const [newRecurring, setNewRecurring] = useState<Partial<RecurringItem>>({ day: 1, amount: 0 });
-  const [newCategory, setNewCategory] = useState('');
 
   useEffect(() => {
     return onAuthStateChanged(auth, u => { setUser(u); setAuthLoading(false); });
@@ -435,7 +437,6 @@ export default function App() {
      if (!user || !newCategory) return;
      const newList = [...categories, newCategory];
      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'categories'), { list: newList });
-     setCategories(newList);
      setNewCategory('');
   };
 
@@ -443,7 +444,6 @@ export default function App() {
      if (!user || !confirm(`ลบหมวดหมู่ ${cat}?`)) return;
      const newList = categories.filter(c => c !== cat);
      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'categories'), { list: newList });
-     setCategories(newList);
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -471,7 +471,6 @@ export default function App() {
           if (row.length < 5) continue;
           const clean = (idx: number) => idx > -1 ? row[idx].replace(/"/g, '').trim() : '';
           const num = (idx: number) => parseFloat(clean(idx).replace(/,/g, '')) || 0;
-
           const name = clean(getCol('ชื่อบัตร')) || 'General';
           const bank = clean(getCol('ธนาคาร')) || 'Other';
           const typeRaw = clean(getCol('ประเภทบัญชี'));
@@ -556,12 +555,7 @@ export default function App() {
 
   // Views
   const availableMonths = useMemo(() => Array.from(new Set(transactions.map(t => t.date.substring(0, 7)))).sort().reverse(), [transactions]);
-  const filteredTx = useMemo(() => transactions.filter(t => 
-    (!filterMonth || t.date.startsWith(filterMonth)) && 
-    (filterType === 'all' || t.type === filterType) && 
-    (filterStatus === 'all' || t.status === filterStatus) &&
-    (walletFilterBank === 'all' || accounts.find(a => a.id === t.accountId)?.bank === walletFilterBank)
-  ), [transactions, filterMonth, filterType, filterStatus, walletFilterBank, accounts]);
+  const filteredTx = useMemo(() => transactions.filter(t => (!filterMonth || t.date.startsWith(filterMonth)) && (filterType === 'all' || t.type === filterType) && (filterStatus === 'all' || t.status === filterStatus)), [transactions, filterMonth, filterType, filterStatus]);
   
   const totalAssets = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0);
   const totalDebt = accounts.reduce((s, a) => s + (a.totalDebt || 0), 0);
@@ -590,7 +584,7 @@ export default function App() {
     return { income, expense, balance: income - expense };
   }, [filteredTx]);
 
-  if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400 bg-slate-50">Loading...</div>;
+  if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400">Loading...</div>;
   if (!user) return <LoginScreen onLogin={handleLogin} onGuest={handleGuestLogin} />;
 
   return (
@@ -599,7 +593,6 @@ export default function App() {
         {/* Header */}
         <div className="px-6 pt-12 pb-2 bg-white flex justify-between items-center shrink-0 z-20">
            <div><p className="text-[10px] text-slate-400 uppercase">My Wallet</p><p className="font-bold text-lg">Dashboard</p></div>
-           {/* ✅ ปุ่มตั้งค่า แก้ไขแล้ว กดได้ชัวร์ */}
            <button onClick={() => setActiveTab('settings')} className="p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition"><Settings size={20}/></button>
         </div>
 
@@ -726,7 +719,7 @@ export default function App() {
                       <div className="mt-3 space-y-2">
                          {recurringItems.map(r => (
                            <div key={r.id} className="flex justify-between items-center text-xs bg-slate-50 p-3 rounded-xl border border-slate-100">
-                              <div><span className="font-bold text-slate-700">{r.description}</span> <span className="text-slate-400 ml-1">(ทุกวันที่ {r.day})</span></div>
+                              <div><span className="font-bold text-slate-700">{r.description}</span> <span className="text-slate-400 ml-1">(วันที่ {r.day}) - {accounts.find(a=>a.id===r.accountId)?.name}</span></div>
                               <div className="flex items-center gap-2">
                                  <span className="font-medium">{formatCurrency(r.amount)}</span>
                                  <button onClick={() => handleUseRecurring(r)} className="px-3 py-1 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition font-bold">สร้าง</button>
