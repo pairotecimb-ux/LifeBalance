@@ -123,6 +123,7 @@ const CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทา
 
 const LoginScreen = ({ onLogin }: { onLogin: () => void }) => (
   <div className="h-full flex flex-col items-center justify-center p-6 bg-slate-900 text-white text-center relative overflow-hidden">
+    <div className="absolute top-[-20%] left-[-20%] w-[300px] h-[300px] bg-blue-600/30 rounded-full blur-[80px]"></div>
     <div className="relative z-10 w-full max-w-sm">
       <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl rotate-6"><Wallet className="w-10 h-10 text-white" /></div>
       <h1 className="text-3xl font-bold mb-2">Credit Manager</h1>
@@ -147,6 +148,7 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
       </div>
       <Edit2 size={16} className="opacity-50" />
     </div>
+    
     <div className="space-y-1">
       <div className="flex justify-between items-end">
         <p className="text-xs opacity-70">{account.type === 'credit' ? 'วงเงินคงเหลือ' : 'ยอดเงินในบัญชี'}</p>
@@ -161,6 +163,12 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
              <span>ใช้ไป: {formatCurrency((account.limit || 0) - account.balance)}</span>
              <span>วงเงิน: {formatCurrency(account.limit || 0)}</span>
           </div>
+          {(account.statementDay || account.dueDay) && (
+             <div className="flex gap-2 text-[9px] opacity-50 mt-1">
+                {account.statementDay && <span>ตัดรอบ: {account.statementDay}</span>}
+                {account.dueDay && <span>จ่าย: {account.dueDay}</span>}
+             </div>
+          )}
         </>
       )}
       {account.totalDebt !== undefined && account.totalDebt > 0 && (
@@ -249,7 +257,7 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
       )}
 
       <div className="space-y-3">
-         <input type="text" placeholder="รายละเอียด (เช่น ค่ากาแฟ)" className="w-full p-4 rounded-xl border border-slate-200 outline-none" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+         <input type="text" placeholder="รายละเอียด (เช่น ค่ากาแฟ)" className="w-full p-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-slate-900" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
          <div className="flex gap-3">
            <input type="date" className="flex-1 p-3 rounded-xl border border-slate-200 text-sm text-center bg-white" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
            <select className="flex-1 p-3 rounded-xl border border-slate-200 text-sm bg-white" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>{CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select>
@@ -311,15 +319,14 @@ export default function App() {
     setLoading(true);
     const unsubAcc = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'accounts'), s => setAccounts(s.docs.map(d => ({ id: d.id, ...d.data() } as Account))));
     const unsubTx = onSnapshot(query(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), orderBy('createdAt', 'desc')), s => {
-      const txData = s.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
-      setTransactions(txData);
-      if(txData.length > 0 && !filterMonth) setFilterMonth(txData[0].date.substring(0,7));
+      setTransactions(s.docs.map(d => ({ id: d.id, ...d.data() } as Transaction)));
       setLoading(false);
     });
     const unsubRec = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'recurring'), s => setRecurringItems(s.docs.map(d => ({ id: d.id, ...d.data() } as RecurringItem))));
     return () => { unsubAcc(); unsubTx(); unsubRec(); };
   }, [user]);
 
+  // Balance Update Logic
   const updateBalance = async (accId: string, amount: number) => {
     if(!accId) return;
     await updateDoc(doc(db, 'artifacts', appId, 'users', user!.uid, 'accounts', accId), { balance: increment(amount) });
@@ -387,6 +394,7 @@ export default function App() {
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
+    setImporting(true);
     const reader = new FileReader();
     reader.onload = async (ev) => {
       try {
@@ -621,10 +629,10 @@ export default function App() {
                          <input type="number" placeholder="วันที่" className="w-12 p-2 border rounded text-xs" onChange={e => setNewRecurring({...newRecurring, day: Number(e.target.value)})}/>
                          <select className="w-24 p-2 border rounded text-xs" onChange={e => setNewRecurring({...newRecurring, accountId: e.target.value})}><option value="">ตัดผ่าน...</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
                       </div>
-                      <button onClick={handleSaveRecurring} className="w-full py-2 bg-slate-900 text-white rounded text-xs font-bold">เพิ่มรายการ</button>
-                      <div className="space-y-1 pt-2">
+                      <button onClick={handleSaveRecurring} className="w-full py-2 bg-slate-900 text-white rounded text-xs font-bold">เพิ่ม Template</button>
+                      <div className="mt-3 space-y-1">
                          {recurringItems.map(r => (
-                           <div key={r.id} className="flex justify-between items-center text-xs bg-slate-50 p-2 rounded border border-slate-100">
+                           <div key={r.id} className="flex justify-between text-xs text-slate-500 bg-slate-50 p-2 rounded border border-slate-100">
                               <div><span className="font-bold">{r.description}</span> <span className="text-slate-400">(วันที่ {r.day})</span></div>
                               <div className="flex items-center gap-2">
                                  <span>{formatCurrency(r.amount)}</span>
@@ -649,11 +657,11 @@ export default function App() {
 
         {/* Bottom Nav (Fixed) */}
         <div className="absolute bottom-0 w-full bg-white/95 backdrop-blur-md border-t py-3 px-6 flex justify-between items-center z-30 pb-6 sm:pb-3 shadow-[0_-5px_20px_rgba(0,0,0,0.05)]">
-           <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 ${activeTab==='dashboard'?'text-slate-900':'text-slate-400'}`}><LayoutDashboard size={24}/><span className="text-[10px]">ภาพรวม</span></button>
-           <button onClick={() => setActiveTab('wallet')} className={`flex flex-col items-center gap-1 ${activeTab==='wallet'?'text-slate-900':'text-slate-400'}`}><Wallet size={24}/><span className="text-[10px]">กระเป๋า</span></button>
+           <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 transition ${activeTab==='dashboard'?'text-slate-900':'text-slate-400'}`}><LayoutDashboard size={24}/><span className="text-[10px]">ภาพรวม</span></button>
+           <button onClick={() => setActiveTab('wallet')} className={`flex flex-col items-center gap-1 transition ${activeTab==='wallet'?'text-slate-900':'text-slate-400'}`}><Wallet size={24}/><span className="text-[10px]">กระเป๋า</span></button>
            <div className="relative -top-6"><button onClick={() => { setNewTxData(defaultTx); setShowAddTx(true); }} className="bg-slate-900 text-white w-14 h-14 rounded-full shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition border-4 border-white"><Plus size={28}/></button></div>
-           <button onClick={() => setActiveTab('transactions')} className={`flex flex-col items-center gap-1 ${activeTab==='transactions'?'text-slate-900':'text-slate-400'}`}><List size={24}/><span className="text-[10px]">รายการ</span></button>
-           <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 ${activeTab==='settings'?'text-slate-900':'text-slate-400'}`}><Settings size={24}/><span className="text-[10px]">ตั้งค่า</span></button>
+           <button onClick={() => setActiveTab('transactions')} className={`flex flex-col items-center gap-1 transition ${activeTab==='transactions'?'text-slate-900':'text-slate-400'}`}><List size={24}/><span className="text-[10px]">รายการ</span></button>
+           <button onClick={() => setActiveTab('settings')} className={`flex flex-col items-center gap-1 transition ${activeTab==='settings'?'text-slate-900':'text-slate-400'}`}><Settings size={24}/><span className="text-[10px]">ตั้งค่า</span></button>
         </div>
 
         {/* Modals */}
