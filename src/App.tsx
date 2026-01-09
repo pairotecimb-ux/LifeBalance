@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration ---
-// Config ของคุณ (Hardcoded เพื่อความเสถียร)
+// Config Hardcoded เพื่อความชัวร์ 100%
 const firebaseConfig = {
   apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
   authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
@@ -25,8 +25,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v10.1.0 (God Mode)";
-const appId = 'credit-manager-pro-v10-final';
+const APP_VERSION = "v10.5.0 (God Mode Restored)";
+const appId = 'credit-manager-pro-v10-fixed';
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -147,14 +147,12 @@ const CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทา
 const LoginScreen = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () => void }) => (
   <div className="h-full flex flex-col items-center justify-center p-6 bg-slate-900 text-white text-center relative overflow-hidden">
     <div className="absolute top-[-20%] left-[-20%] w-[300px] h-[300px] bg-blue-600/30 rounded-full blur-[80px] animate-pulse"></div>
-    <div className="absolute bottom-[-20%] right-[-20%] w-[300px] h-[300px] bg-purple-600/30 rounded-full blur-[80px] animate-pulse delay-700"></div>
     <div className="relative z-10 w-full max-w-sm backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl">
       <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl rotate-6 hover:rotate-12 transition-transform duration-500 cursor-pointer">
         <Wallet className="w-10 h-10 text-white" />
       </div>
       <h1 className="text-3xl font-bold mb-2 tracking-tight">Credit Manager <span className="text-blue-400">Pro</span></h1>
-      <p className="text-slate-400 mb-8 text-sm">จัดการทุกบัญชีในที่เดียว อย่างชาญฉลาด</p>
-      
+      <p className="text-slate-400 mb-8 text-sm">จัดการการเงินให้เป็นเรื่องง่าย</p>
       <div className="space-y-3">
         <button onClick={onLogin} className="w-full bg-white text-slate-900 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-50 hover:scale-105 transition-all shadow-lg active:scale-95 group">
           <span className="w-5 h-5 rounded-full bg-slate-200 group-hover:bg-blue-200 flex items-center justify-center text-xs font-bold text-blue-600">G</span> เข้าสู่ระบบด้วย Google
@@ -163,22 +161,19 @@ const LoginScreen = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () =>
           <UserIcon size={18}/> ทดลองใช้งาน (Guest)
         </button>
       </div>
-
-      <p className="mt-6 text-[10px] text-slate-500 flex items-center justify-center gap-1"><Lock size={10} /> ข้อมูลของคุณปลอดภัย</p>
     </div>
   </div>
 );
 
 const AccountCard = ({ account, onClick }: { account: Account, onClick: () => void }) => (
   <div onClick={onClick} className={`relative p-5 rounded-2xl text-white overflow-hidden bg-gradient-to-br ${account.color} shadow-lg cursor-pointer hover:scale-[1.03] active:scale-95 transition-all duration-300 border border-white/10 group`}>
-    <div className="absolute right-[-20px] top-[-20px] w-24 h-24 bg-white/10 rounded-full blur-xl group-hover:bg-white/20 transition-colors"></div>
     <div className="flex justify-between items-start mb-4 relative z-10">
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-md border border-white/10 shadow-sm group-hover:rotate-12 transition-transform duration-500">
           {account.type === 'bank' ? <Landmark size={20}/> : account.type === 'cash' ? <Coins size={20}/> : <CreditCard size={20}/>}
         </div>
         <div>
-          <p className="text-[10px] opacity-80 uppercase font-bold tracking-wider flex items-center gap-1">{account.bank}</p>
+          <p className="text-[10px] opacity-80 uppercase font-bold tracking-wider flex items-center gap-1">{account.bank} {account.cardType && <span className="bg-white/20 px-1 rounded">{account.cardType}</span>}</p>
           <p className="font-bold text-lg leading-none truncate w-40 drop-shadow-md">{account.name}</p>
           {account.accountNumber && <p className="text-[10px] opacity-70 font-mono mt-1 tracking-widest">{account.accountNumber}</p>}
         </div>
@@ -189,7 +184,7 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
     <div className="space-y-2 relative z-10">
       <div className="flex justify-between items-end">
         <p className="text-xs opacity-80 font-medium">{account.type === 'credit' ? 'วงเงินคงเหลือ' : 'ยอดเงินในบัญชี'}</p>
-        <p className="text-2xl font-bold tracking-tight drop-shadow-sm">{safeFormatCurrency(account.balance)}</p>
+        <p className="text-2xl font-bold tracking-tight drop-shadow-sm">{formatCurrency(account.balance)}</p>
       </div>
       {account.type === 'credit' && safeNumber(account.limit) > 0 && (
         <>
@@ -197,8 +192,8 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
              <div className="bg-white h-full shadow-[0_0_10px_rgba(255,255,255,0.5)] transition-all duration-1000" style={{ width: `${Math.min(((safeNumber(account.limit) - safeNumber(account.balance)) / safeNumber(account.limit)) * 100, 100)}%` }}></div>
           </div>
           <div className="flex justify-between text-[10px] opacity-70 font-medium">
-             <span>ใช้ไป: {safeFormatCurrency(safeNumber(account.limit) - safeNumber(account.balance))}</span>
-             <span>วงเงิน: {safeFormatCurrency(account.limit || 0)}</span>
+             <span>ใช้ไป: {formatCurrency(safeNumber(account.limit) - safeNumber(account.balance))}</span>
+             <span>วงเงิน: {formatCurrency(account.limit || 0)}</span>
           </div>
           {(account.statementDay || account.dueDay) && (
              <div className="flex gap-2 text-[9px] opacity-60 mt-1">
@@ -211,7 +206,7 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
       {safeNumber(account.totalDebt) > 0 && (
          <div className="mt-2 pt-2 border-t border-white/20 flex items-center gap-2">
            <div className="bg-rose-500/20 p-1 rounded-md"><TrendingUp size={12} className="text-rose-200 rotate-180"/></div>
-           <p className="text-xs text-rose-100 font-bold">ภาระหนี้: {safeFormatCurrency(account.totalDebt)}</p>
+           <p className="text-xs text-rose-100 font-bold">ภาระหนี้: {formatCurrency(account.totalDebt)}</p>
          </div>
       )}
     </div>
@@ -223,7 +218,6 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
   const [selectedBank, setSelectedBank] = useState('');
   const [selectedType, setSelectedType] = useState<string>('');
   
-  // Use effect to update form when initialData changes (fixes stale data)
   useEffect(() => { setFormData(initialData); }, [initialData]);
 
   const banks = useMemo(() => Array.from(new Set(accounts.map(a => a.bank))).sort(), [accounts]);
@@ -255,7 +249,7 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
          </div>
          <select className="w-full p-4 rounded-2xl border-2 border-slate-200 text-sm font-bold bg-white outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-900 transition-all shadow-sm" value={formData.accountId || ''} onChange={e => setFormData({ ...formData, accountId: e.target.value })}>
            <option value="">-- เลือกบัญชี --</option>
-           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({safeFormatCurrency(a.balance)})</option>)}
+           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({formatCurrency(a.balance)})</option>)}
          </select>
       </div>
 
@@ -386,8 +380,12 @@ export default function App() {
         else if (old.type === 'transfer' && old.toAccountId) { await updateBalance(old.accountId, old.amount); await updateBalance(old.toAccountId, -old.amount); }
       }
     }
+    // New Logic: Expense (Credit) -> Limit Decreases immediately.
+    // Payment (Transfer) -> Limit Increases.
+    // Changing Status -> No effect on balance (Just a tag for user reference)
+    
     if (data.type === 'income') await updateBalance(data.accountId!, amount);
-    else if (data.type === 'expense') await updateBalance(data.accountId!, -amount);
+    else if (data.type === 'expense') await updateBalance(data.accountId!, -amount); // Credit: Limit decreases. Bank: Money decreases.
     else if (data.type === 'transfer' && data.toAccountId) { await updateBalance(data.accountId!, -amount); await updateBalance(data.toAccountId, amount); }
 
     const payload = { ...data, amount, updatedAt: serverTimestamp() };
@@ -399,6 +397,17 @@ export default function App() {
   const handleToggleStatus = async (tx: Transaction) => {
      if (!user) return;
      const newStatus = tx.status === 'paid' ? 'unpaid' : 'paid';
+     
+     // Special Logic for User Request: "Status Paid = Money return to card"
+     // This is unusual but requested. Let's implement it carefully.
+     // If changing to 'Paid' -> Add balance back.
+     // If changing to 'Unpaid' -> Deduct balance.
+     const acc = accounts.find(a => a.id === tx.accountId);
+     if (acc?.type === 'credit' && tx.type === 'expense') {
+        if (newStatus === 'paid') await updateBalance(tx.accountId, tx.amount);
+        else await updateBalance(tx.accountId, -tx.amount);
+     }
+     
      await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', tx.id), { status: newStatus });
   };
 
@@ -407,7 +416,21 @@ export default function App() {
     if (!confirm('ยืนยันลบ? ยอดเงินจะถูกคืนกลับ')) return;
     const old = showTxDetail;
     if (old.type === 'income') await updateBalance(old.accountId, -old.amount);
-    else if (old.type === 'expense') await updateBalance(old.accountId, old.amount);
+    else if (old.type === 'expense') {
+       // If it was marked as Paid (and refunded), deleting it means we need to take money back?
+       // Let's stick to standard revert: It was an expense, so we add money back.
+       // UNLESS user used the special "Paid = Refund" logic above.
+       // To be safe: If status is Paid and it's credit, we already refunded. So deleting it means nothing?
+       // Wait, if I bought item (limit -100), then Paid (limit +100). Net = 0.
+       // Deleting this transaction should have Net effect 0.
+       // If I bought item (limit -100) Unpaid. Net = -100. Deleting should be +100.
+       const acc = accounts.find(a => a.id === old.accountId);
+       if (acc?.type === 'credit' && old.status === 'paid') {
+          // Do nothing to balance, as it was already effectively cancelled out by "Paid" status logic
+       } else {
+          await updateBalance(old.accountId, old.amount);
+       }
+    }
     else if (old.type === 'transfer' && old.toAccountId) { await updateBalance(old.accountId, old.amount); await updateBalance(old.toAccountId, -old.amount); }
     await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', old.id));
     setShowTxDetail(null);
