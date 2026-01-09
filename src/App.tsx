@@ -2,16 +2,17 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   PieChart as IconPieChart, CreditCard, Plus, Trash2, Wallet, LayoutDashboard, List, Settings, Upload, Download,
   CheckCircle2, XCircle, TrendingUp, DollarSign, Calendar, ChevronRight, Filter,
-  ArrowRightLeft, Landmark, Coins, Edit2, Save, Building, MoreHorizontal, Search, X, LogOut, Lock, Info, Repeat, RefreshCw, UserCircle, Tag, User as UserIcon
+  ArrowRightLeft, Landmark, Coins, Edit2, Save, Building, MoreHorizontal, Search, X, LogOut, Lock, Info, Repeat, RefreshCw, UserCircle, BarChart3, GripHorizontal, Tag, User as UserIcon
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
 import {
   getFirestore, collection, addDoc, query, onSnapshot, deleteDoc, doc, updateDoc,
-  serverTimestamp, writeBatch, orderBy, increment, setDoc
+  serverTimestamp, writeBatch, orderBy, increment, setDoc, getDoc
 } from 'firebase/firestore';
 
 // --- Configuration ---
+// Config ของคุณ (Hardcoded เพื่อความเสถียร)
 const firebaseConfig = {
   apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
   authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
@@ -29,8 +30,9 @@ try {
   db = getFirestore(app);
 } catch (e) { console.error("Firebase Init Error", e); }
 
-const APP_VERSION = "v13.0.0 (Final Redemption)";
-const appId = 'credit-manager-pro-v13';
+const APP_VERSION = "v13.1.0 (Resurrection)";
+const appId = 'credit-manager-pro-v13-1';
+const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/สาธารณูปโภค', 'ผ่อนสินค้า', 'สุขภาพ', 'บันเทิง', 'เงินเดือน', 'อื่นๆ'];
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -118,7 +120,6 @@ const getBankColor = (bankName: string) => {
     const key = Object.keys(colors).find(k => bankName?.toLowerCase().includes(k.toLowerCase()));
     return colors[key || ''] || 'from-slate-600 to-slate-800';
 };
-const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/สาธารณูปโภค', 'ผ่อนสินค้า', 'สุขภาพ', 'บันเทิง', 'เงินเดือน', 'อื่นๆ'];
 
 // --- Main Component ---
 export default function App() {
@@ -255,7 +256,9 @@ export default function App() {
                  const accData: any = { 
                     name, bank, type, color: getBankColor(bank),
                     accountNumber: fixScientificNotation(clean(getCol('เลขบัตร'))),
-                    totalDebt: num(getCol('ภาระหนี้'))
+                    totalDebt: num(getCol('ภาระหนี้')),
+                    statementDay: parseInt(clean(getCol('วันสรุปยอด'))) || 0,
+                    dueDay: parseInt(clean(getCol('กำหนดชำระ'))) || 0
                  };
                  accData.limit = num(getCol('วงเงินทั้งหมด')) || 0;
                  if (type === 'credit') {
@@ -326,7 +329,12 @@ export default function App() {
 
   // Views
   const availableMonths = useMemo(() => Array.from(new Set(transactions.map(t => t.date.substring(0, 7)))).sort().reverse(), [transactions]);
-  const filteredTx = useMemo(() => transactions.filter(t => (!filterMonth || t.date.startsWith(filterMonth)) && (filterType === 'all' || t.type === filterType) && (filterBank === 'all' || accounts.find(a=>a.id===t.accountId)?.bank === filterBank)), [transactions, filterMonth, filterType, filterBank, accounts]);
+  const filteredTx = useMemo(() => transactions.filter(t => 
+    (!filterMonth || t.date.startsWith(filterMonth)) && 
+    (filterType === 'all' || t.type === filterType) && 
+    (filterStatus === 'all' || t.status === filterStatus) &&
+    (filterBank === 'all' || accounts.find(a=>a.id===t.accountId)?.bank === filterBank)
+  ), [transactions, filterMonth, filterType, filterStatus, filterBank, accounts]);
   
   const totalAssets = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0);
   const totalDebt = accounts.reduce((s, a) => s + (a.totalDebt || 0), 0);
@@ -369,6 +377,7 @@ export default function App() {
         {/* Header */}
         <div className="px-6 pt-12 pb-2 bg-white flex justify-between items-center shrink-0 z-20">
            <div><p className="text-[10px] text-slate-400 uppercase">My Wallet</p><p className="font-bold text-lg">Dashboard</p></div>
+           {/* ✅ ปุ่มตั้งค่า แก้ไขแล้ว */}
            <button onClick={() => setActiveTab('settings')} className="p-2 bg-slate-50 rounded-full hover:bg-slate-100"><Settings size={20}/></button>
         </div>
 
@@ -419,9 +428,14 @@ export default function App() {
                     <h3 className="text-sm font-bold text-slate-500 mb-2">{bank}</h3>
                     <div className="space-y-3">{accounts.filter(a => a.bank === bank).map(a => (
                       <div key={a.id} onClick={() => { setIsNewAccount(false); setEditingAccount(a); }} className={`relative p-4 rounded-2xl text-white overflow-hidden bg-gradient-to-br ${a.color} shadow-lg cursor-pointer hover:scale-[1.02] transition-transform`}>
-                         <div className="flex justify-between items-start mb-3"><div className="flex items-center gap-2"><div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">{a.type === 'bank' ? <Landmark size={14}/> : a.type === 'cash' ? <Coins size={14}/> : <CreditCard size={14}/>}</div><div><p className="text-[10px] opacity-80 uppercase font-medium">{a.bank}</p><p className="font-bold text-lg leading-none">{a.name}</p></div></div><Edit2 size={16} className="opacity-50" /></div>
+                         <div className="flex justify-between items-start mb-3"><div className="flex items-center gap-2"><div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">{a.type === 'bank' ? <Landmark size={14}/> : a.type === 'cash' ? <Coins size={14}/> : <CreditCard size={14}/>}</div><div><p className="text-[10px] opacity-80 uppercase font-medium">{a.bank}</p><p className="font-bold text-lg leading-none">{a.name}</p><p className="text-[10px] opacity-60 font-mono mt-0.5">{a.accountNumber}</p></div></div><Edit2 size={16} className="opacity-50" /></div>
                          <div className="flex justify-between items-end"><p className="text-xs opacity-70">{a.type === 'credit' ? 'วงเงินคงเหลือ' : 'ยอดเงิน'}</p><p className="text-xl font-bold">{formatCurrency(a.balance)}</p></div>
-                         {a.type === 'credit' && <div className="flex justify-between text-[10px] opacity-60 pt-1"><span>ใช้ไป: {formatCurrency((a.limit||0) - a.balance)}</span><span>วงเงิน: {formatCurrency(a.limit||0)}</span></div>}
+                         {a.type === 'credit' && (
+                             <>
+                                <div className="flex justify-between text-[10px] opacity-60 pt-1"><span>ใช้ไป: {formatCurrency((a.limit||0) - a.balance)}</span><span>วงเงิน: {formatCurrency(a.limit||0)}</span></div>
+                                <div className="flex gap-2 text-[9px] opacity-60 mt-1"><span>ตัดรอบ: {a.statementDay||'-'}</span><span>จ่าย: {a.dueDay||'-'}</span></div>
+                             </>
+                         )}
                       </div>
                     ))}</div>
                   </div>
@@ -441,6 +455,9 @@ export default function App() {
                      <div className="text-right"><p className={`font-bold ${tx.type==='income'?'text-emerald-600':'text-slate-900'}`}>{tx.type==='expense'?'-':''}{formatCurrency(tx.amount)}</p>{tx.status==='unpaid'&&<span className="text-[9px] bg-amber-100 text-amber-600 px-1 rounded">รอจ่าย</span>}</div>
                   </div>
                 ))}</div>
+                <div className="bg-slate-50 p-4 rounded-xl text-center">
+                   <p className="text-xs text-slate-500">รวมทั้งหมด ({filteredTx.length} รายการ)</p>
+                </div>
              </div>
            )}
            {activeTab === 'settings' && (
@@ -525,9 +542,18 @@ export default function App() {
                 <div className="space-y-3">
                    <input type="text" placeholder="ชื่อบัญชี" className="w-full p-3 border rounded-xl" value={editingAccount.name} onChange={e => setEditingAccount({...editingAccount, name: e.target.value})}/>
                    <input type="text" placeholder="ธนาคาร" className="w-full p-3 border rounded-xl" value={editingAccount.bank} onChange={e => setEditingAccount({...editingAccount, bank: e.target.value})}/>
+                   <input type="text" placeholder="เลขบัญชี (Optional)" className="w-full p-3 border rounded-xl" value={editingAccount.accountNumber || ''} onChange={e => setEditingAccount({...editingAccount, accountNumber: e.target.value})}/>
                    <select className="w-full p-3 border rounded-xl bg-white" value={editingAccount.type} onChange={e => setEditingAccount({...editingAccount, type: e.target.value as any})}><option value="bank">ธนาคาร</option><option value="credit">บัตรเครดิต</option><option value="cash">เงินสด</option></select>
                    <input type="number" placeholder="ยอดเงิน/วงเงินคงเหลือ" className="w-full p-3 border rounded-xl font-bold text-lg" value={editingAccount.balance} onChange={e => setEditingAccount({...editingAccount, balance: Number(e.target.value)})}/>
-                   {editingAccount.type === 'credit' && <input type="number" placeholder="วงเงินทั้งหมด" className="w-full p-3 border rounded-xl" value={editingAccount.limit} onChange={e => setEditingAccount({...editingAccount, limit: Number(e.target.value)})}/>}
+                   {editingAccount.type === 'credit' && (
+                       <>
+                         <input type="number" placeholder="วงเงินทั้งหมด" className="w-full p-3 border rounded-xl" value={editingAccount.limit} onChange={e => setEditingAccount({...editingAccount, limit: Number(e.target.value)})}/>
+                         <div className="flex gap-2">
+                             <input type="number" placeholder="วันสรุปยอด" className="flex-1 p-3 border rounded-xl text-center" value={editingAccount.statementDay || ''} onChange={e => setEditingAccount({...editingAccount, statementDay: Number(e.target.value)})}/>
+                             <input type="number" placeholder="วันจ่าย" className="flex-1 p-3 border rounded-xl text-center" value={editingAccount.dueDay || ''} onChange={e => setEditingAccount({...editingAccount, dueDay: Number(e.target.value)})}/>
+                         </div>
+                       </>
+                   )}
                    <div className="flex gap-2 pt-2"><button onClick={() => setEditingAccount(null)} className="flex-1 py-3 bg-slate-100 rounded-xl">ยกเลิก</button><button onClick={handleSaveAccount} className="flex-1 py-3 bg-slate-900 text-white rounded-xl">บันทึก</button></div>
                    {!isNewAccount && <button onClick={handleDeleteAccount} className="w-full py-2 text-rose-500 text-xs">ลบบัญชี</button>}
                 </div>
