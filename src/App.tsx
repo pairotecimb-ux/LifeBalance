@@ -12,23 +12,21 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration ---
-const firebaseConfig = JSON.parse(__firebase_config || '{}');
-
-// Fallback กันตาย
-const safeConfig = Object.keys(firebaseConfig).length > 0 ? firebaseConfig : {
-  apiKey: "api-key-placeholder",
-  authDomain: "domain-placeholder",
-  projectId: "project-id",
-  storageBucket: "bucket",
-  messagingSenderId: "sender-id",
-  appId: "app-id"
+// ✅ FIX: ใส่ Config จริงของคุณกลับเข้าไป เพื่อแก้ปัญหาหน้าขาวบน Vercel
+const firebaseConfig = {
+  apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
+  authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
+  projectId: 'credit-card-manager-b95c8',
+  storageBucket: 'credit-card-manager-b95c8.firebasestorage.app',
+  messagingSenderId: '486114228268',
+  appId: '1:486114228268:web:6d00ae1430aae1e252b989',
 };
 
-const app = initializeApp(safeConfig);
+const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v8.2.0 (Stable Login)";
-const appId = 'credit-manager-pro-v8-final';
+const APP_VERSION = "v8.5.0 (Stable & Secure)";
+const appId = 'credit-manager-pro-v8-final'; 
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -70,7 +68,7 @@ interface RecurringItem {
   day: number;
 }
 
-// --- Safe Helpers (ป้องกันหน้าขาว) ---
+// --- Safe Helpers ---
 const safeNumber = (val: any) => {
   const num = parseFloat(val);
   return isNaN(num) ? 0 : num;
@@ -147,7 +145,7 @@ const CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทา
 // --- Components ---
 
 const LoginScreen = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () => void }) => (
-  <div className="h-full flex flex-col items-center justify-center p-6 bg-slate-900 text-white text-center relative overflow-hidden">
+  <div className="h-screen flex flex-col items-center justify-center p-6 bg-slate-900 text-white text-center relative overflow-hidden">
     <div className="absolute top-[-20%] left-[-20%] w-[300px] h-[300px] bg-blue-600/30 rounded-full blur-[80px] animate-pulse"></div>
     <div className="absolute bottom-[-20%] right-[-20%] w-[300px] h-[300px] bg-purple-600/30 rounded-full blur-[80px] animate-pulse delay-700"></div>
     <div className="relative z-10 w-full max-w-sm backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl">
@@ -200,7 +198,7 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
           </div>
           <div className="flex justify-between text-[10px] opacity-70 font-medium">
              <span>ใช้ไป: {formatCurrency(safeNumber(account.limit) - safeNumber(account.balance))}</span>
-             <span>วงเงิน: {formatCurrency(account.limit)}</span>
+             <span>วงเงิน: {formatCurrency(account.limit || 0)}</span>
           </div>
         </>
       )}
@@ -315,7 +313,6 @@ export default function App() {
   const [newRecurring, setNewRecurring] = useState<Partial<RecurringItem>>({ day: 1, amount: 0 });
 
   useEffect(() => {
-    // ⚠️ Disable Auto Login for Safety and allow user to choose login method
     return onAuthStateChanged(auth, u => { setUser(u); setAuthLoading(false); });
   }, []);
 
@@ -559,7 +556,7 @@ export default function App() {
     return sum;
   }, [filteredTx, accounts]);
 
-  if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400">Loading...</div>;
+  if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400 bg-slate-50">Loading...</div>;
   if (!user) return <LoginScreen onLogin={handleLogin} onGuest={handleGuestLogin} />;
 
   return (
