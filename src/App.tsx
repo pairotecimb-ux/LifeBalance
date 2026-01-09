@@ -2,17 +2,16 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   PieChart as IconPieChart, CreditCard, Plus, Trash2, Wallet, LayoutDashboard, List, Settings, Upload, Download,
   CheckCircle2, XCircle, TrendingUp, DollarSign, Calendar, ChevronRight, Filter,
-  ArrowRightLeft, Landmark, Coins, Edit2, Save, Building, MoreHorizontal, Search, X, LogOut, Lock, Info, Repeat, RefreshCw, UserCircle, BarChart3
+  ArrowRightLeft, Landmark, Coins, Edit2, Save, Building, MoreHorizontal, Search, X, LogOut, Lock, Info, Repeat, RefreshCw, UserCircle, BarChart3, GripHorizontal
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
 import {
   getFirestore, collection, addDoc, query, onSnapshot, deleteDoc, doc, updateDoc,
   serverTimestamp, writeBatch, orderBy, increment
 } from 'firebase/firestore';
 
 // --- Configuration ---
-// Config ของคุณ (Hardcoded เพื่อความเสถียร)
 const firebaseConfig = {
   apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
   authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
@@ -25,8 +24,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v11.0.0 (Ultimate Fixed)";
-const appId = 'credit-manager-pro-v11';
+const APP_VERSION = "v11.0.0 (God Mode)";
+const appId = 'credit-manager-pro-v11-final';
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -140,37 +139,40 @@ const BANK_COLORS: Record<string, string> = {
 };
 const getBankColor = (bankName: string) => BANK_COLORS[Object.keys(BANK_COLORS).find(k => bankName?.toLowerCase().includes(k.toLowerCase())) || 'default'];
 
-const CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/สาธารณูปโภค', 'ผ่อนสินค้า', 'สุขภาพ', 'บันเทิง', 'เงินเดือน', 'อื่นๆ'];
+const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/สาธารณูปโภค', 'ผ่อนสินค้า', 'สุขภาพ', 'บันเทิง', 'เงินเดือน', 'อื่นๆ'];
 
 // --- Components ---
 
-const LoginScreen = ({ onLogin }: { onLogin: () => void }) => (
+const LoginScreen = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () => void }) => (
   <div className="h-full flex flex-col items-center justify-center p-6 bg-slate-900 text-white text-center relative overflow-hidden">
-    <div className="absolute top-[-20%] left-[-20%] w-[300px] h-[300px] bg-blue-600/30 rounded-full blur-[80px] animate-pulse"></div>
     <div className="relative z-10 w-full max-w-sm backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl">
-      <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl rotate-6">
+      <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl">
         <Wallet className="w-10 h-10 text-white" />
       </div>
-      <h1 className="text-3xl font-bold mb-2 tracking-tight">Credit Manager <span className="text-blue-400">Pro</span></h1>
-      <p className="text-slate-400 mb-8 text-sm">V11.0 Ultimate Edition</p>
-      <button onClick={onLogin} className="w-full bg-white text-slate-900 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-50 hover:scale-105 transition-all shadow-lg active:scale-95">
-        <span className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-blue-600">G</span> เข้าสู่ระบบด้วย Google
-      </button>
+      <h1 className="text-3xl font-bold mb-2">Credit Manager V11</h1>
+      <div className="space-y-3 mt-8">
+        <button onClick={onLogin} className="w-full bg-white text-slate-900 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:scale-105 transition-all">
+          <span className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-blue-600">G</span> Google Login
+        </button>
+        <button onClick={onGuest} className="w-full bg-white/10 text-white py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 border border-white/10">
+          <UserIcon size={18}/> Guest Mode
+        </button>
+      </div>
     </div>
   </div>
 );
 
 const AccountCard = ({ account, onClick }: { account: Account, onClick: () => void }) => (
-  <div onClick={onClick} className={`relative p-5 rounded-2xl text-white overflow-hidden bg-gradient-to-br ${account.color} shadow-lg cursor-pointer hover:scale-[1.02] active:scale-95 transition-all duration-300 border border-white/10`}>
+  <div onClick={onClick} className={`relative p-5 rounded-2xl text-white overflow-hidden bg-gradient-to-br ${account.color} shadow-lg cursor-pointer hover:scale-[1.02] transition-all border border-white/10`}>
     <div className="flex justify-between items-start mb-4 relative z-10">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-md border border-white/10 shadow-sm">
+        <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-md">
           {account.type === 'bank' ? <Landmark size={20}/> : account.type === 'cash' ? <Coins size={20}/> : <CreditCard size={20}/>}
         </div>
         <div>
           <p className="text-[10px] opacity-80 uppercase font-bold tracking-wider flex items-center gap-1">{account.bank} {account.cardType && <span className="bg-white/20 px-1 rounded">{account.cardType}</span>}</p>
-          <p className="font-bold text-lg leading-none truncate w-40 drop-shadow-md">{account.name}</p>
-          {account.accountNumber && <p className="text-[10px] opacity-70 font-mono mt-1 tracking-widest">{account.accountNumber}</p>}
+          <p className="font-bold text-lg leading-none truncate w-40">{account.name}</p>
+          {account.accountNumber && <p className="text-[10px] opacity-70 font-mono mt-1">{account.accountNumber}</p>}
         </div>
       </div>
       <Edit2 size={16} className="opacity-50" />
@@ -178,24 +180,18 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
     <div className="space-y-2 relative z-10">
       <div className="flex justify-between items-end">
         <p className="text-xs opacity-80 font-medium">{account.type === 'credit' ? 'วงเงินคงเหลือ' : 'ยอดเงินในบัญชี'}</p>
-        <p className="text-2xl font-bold tracking-tight drop-shadow-sm">{formatCurrency(account.balance)}</p>
+        <p className="text-2xl font-bold tracking-tight">{formatCurrency(account.balance)}</p>
       </div>
       {account.type === 'credit' && safeNumber(account.limit) > 0 && (
         <>
           <div className="w-full bg-black/20 h-1.5 rounded-full overflow-hidden">
-             <div className="bg-white h-full shadow-[0_0_10px_rgba(255,255,255,0.5)] transition-all duration-1000" style={{ width: `${Math.min(((safeNumber(account.limit) - safeNumber(account.balance)) / safeNumber(account.limit)) * 100, 100)}%` }}></div>
+             <div className="bg-white h-full" style={{ width: `${Math.min(((safeNumber(account.limit) - safeNumber(account.balance)) / safeNumber(account.limit)) * 100, 100)}%` }}></div>
           </div>
           <div className="flex justify-between text-[10px] opacity-70 font-medium">
              <span>ใช้ไป: {formatCurrency(safeNumber(account.limit) - safeNumber(account.balance))}</span>
              <span>วงเงิน: {formatCurrency(account.limit || 0)}</span>
           </div>
         </>
-      )}
-      {safeNumber(account.totalDebt) > 0 && (
-         <div className="mt-2 pt-2 border-t border-white/20 flex items-center gap-2">
-           <div className="bg-rose-500/20 p-1 rounded-md"><TrendingUp size={12} className="text-rose-200 rotate-180"/></div>
-           <p className="text-xs text-rose-100 font-bold">ภาระหนี้: {formatCurrency(account.totalDebt)}</p>
-         </div>
       )}
     </div>
   </div>
@@ -220,7 +216,7 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
     <div className="space-y-6 pb-10">
       <div className="flex bg-slate-100 p-1.5 rounded-2xl shadow-inner">
         {[{ id: 'expense', label: 'รายจ่าย', color: 'text-rose-600' }, { id: 'income', label: 'รายรับ', color: 'text-emerald-600' }, { id: 'transfer', label: 'โอน/ชำระ', color: 'text-blue-600' }].map((t) => (
-          <button key={t.id} onClick={() => setFormData({ ...formData, type: t.id as any })} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 ${formData.type === t.id ? `bg-white shadow-md scale-100 ${t.color}` : 'text-slate-400 hover:text-slate-600 scale-95'}`}>{t.label}</button>
+          <button key={t.id} onClick={() => setFormData({ ...formData, type: t.id as any })} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${formData.type === t.id ? `bg-white shadow-md ${t.color}` : 'text-slate-400'}`}>{t.label}</button>
         ))}
       </div>
 
@@ -229,22 +225,22 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
         <p className="text-xs text-slate-400 mt-2 font-bold uppercase tracking-widest">THB</p>
       </div>
 
-      <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 space-y-3 shadow-inner">
+      <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 space-y-3">
          <div className="flex justify-between items-center"><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{formData.type === 'income' ? 'เข้าบัญชี' : 'จากบัญชี'}</p></div>
          <div className="grid grid-cols-2 gap-2">
-           <select className="p-3 rounded-xl border border-slate-200 text-sm outline-none bg-white mb-2 shadow-sm focus:border-slate-400 transition-colors" value={selectedBank} onChange={e => { setSelectedBank(e.target.value); setSelectedType(''); }}><option value="">-- กรองธนาคาร --</option>{banks.map(b => <option key={b} value={b}>{b}</option>)}</select>
-           <select className="p-3 rounded-xl border border-slate-200 text-sm outline-none bg-white mb-2 shadow-sm focus:border-slate-400 transition-colors" value={selectedType} onChange={e => setSelectedType(e.target.value)}><option value="">-- ประเภท --</option><option value="bank">บัญชี</option><option value="credit">บัตรเครดิต</option><option value="cash">เงินสด</option></select>
+           <select className="p-3 rounded-xl border border-slate-200 text-sm outline-none bg-white" value={selectedBank} onChange={e => { setSelectedBank(e.target.value); setSelectedType(''); }}><option value="">-- กรองธนาคาร --</option>{banks.map(b => <option key={b} value={b}>{b}</option>)}</select>
+           <select className="p-3 rounded-xl border border-slate-200 text-sm outline-none bg-white" value={selectedType} onChange={e => setSelectedType(e.target.value)}><option value="">-- ประเภท --</option><option value="bank">บัญชี</option><option value="credit">บัตรเครดิต</option><option value="cash">เงินสด</option></select>
          </div>
-         <select className="w-full p-4 rounded-2xl border-2 border-slate-200 text-sm font-bold bg-white outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-900 transition-all shadow-sm" value={formData.accountId || ''} onChange={e => setFormData({ ...formData, accountId: e.target.value })}>
+         <select className="w-full p-4 rounded-2xl border-2 border-slate-200 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-slate-900" value={formData.accountId || ''} onChange={e => setFormData({ ...formData, accountId: e.target.value })}>
            <option value="">-- เลือกบัญชี --</option>
-           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({safeFormatCurrency(a.balance)})</option>)}
+           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({formatCurrency(a.balance)})</option>)}
          </select>
       </div>
 
       {formData.type === 'transfer' && (
-        <div className="bg-blue-50 p-5 rounded-3xl border border-blue-100 space-y-3 shadow-inner">
+        <div className="bg-blue-50 p-5 rounded-3xl border border-blue-100 space-y-3">
            <p className="text-xs font-bold text-blue-500 uppercase flex items-center gap-1 tracking-wider"><ArrowRightLeft size={12}/> ไปยัง / ชำระบัตร</p>
-           <select className="w-full p-4 rounded-2xl border-2 border-blue-200 text-sm font-bold bg-white outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all shadow-sm" value={formData.toAccountId || ''} onChange={e => setFormData({ ...formData, toAccountId: e.target.value })}>
+           <select className="w-full p-4 rounded-2xl border-2 border-blue-200 text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-blue-500" value={formData.toAccountId || ''} onChange={e => setFormData({ ...formData, toAccountId: e.target.value })}>
              <option value="">-- เลือกปลายทาง --</option>
              {accounts.filter(a => a.id !== formData.accountId).map(a => <option key={a.id} value={a.id}>{a.type === 'credit' ? '💳' : '🏦'} {a.bank} - {a.name}</option>)}
            </select>
@@ -252,25 +248,25 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
       )}
 
       <div className="space-y-3">
-         <input type="text" placeholder="รายละเอียด (เช่น ค่ากาแฟ)" className="w-full p-4 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-slate-50 focus:border-slate-400 bg-white shadow-sm transition-all font-medium" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
          <div className="flex gap-3">
-           <input type="date" className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm text-center bg-white shadow-sm font-medium" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
-           <select className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm bg-white shadow-sm font-medium" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>{CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select>
+            <input type="text" placeholder="รายละเอียด/หมวดหมู่" className="flex-[2] p-4 rounded-2xl border border-slate-200 outline-none" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+            <input type="text" list="categories" placeholder="กลุ่ม" className="flex-1 p-4 rounded-2xl border border-slate-200 outline-none text-center" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}/>
+            <datalist id="categories">{DEFAULT_CATEGORIES.map(c=><option key={c} value={c}/>)}</datalist>
          </div>
-         {formData.type === 'expense' && (
-             <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-2xl">
-                <span className="text-xs text-slate-500 pl-2 font-bold">สถานะ:</span>
-                <div className="flex-1 flex bg-white rounded-xl p-1 shadow-sm">
-                   <button onClick={() => setFormData({...formData, status: 'paid'})} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${formData.status==='paid'?'bg-emerald-100 text-emerald-700 shadow-sm':'text-slate-400 hover:bg-slate-50'}`}>จ่ายแล้ว</button>
-                   <button onClick={() => setFormData({...formData, status: 'unpaid'})} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${formData.status==='unpaid'?'bg-amber-100 text-amber-700 shadow-sm':'text-slate-400 hover:bg-slate-50'}`}>รอจ่าย</button>
-                </div>
-             </div>
-         )}
+         <div className="flex gap-3">
+           <input type="date" className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm text-center bg-white" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
+           {formData.type === 'expense' && (
+             <select className={`flex-1 p-3 rounded-2xl border border-slate-200 text-sm text-center font-bold ${formData.status === 'paid' ? 'text-emerald-600 bg-emerald-50' : 'text-amber-600 bg-amber-50'}`} value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as any })}>
+               <option value="paid">จ่ายแล้ว</option>
+               <option value="unpaid">รอจ่าย</option>
+             </select>
+           )}
+         </div>
       </div>
 
       <div className="pt-4 flex gap-3">
-         <button onClick={onCancel} className="flex-1 py-4 bg-white border border-slate-200 text-slate-500 rounded-2xl font-bold hover:bg-slate-50 transition-all">ยกเลิก</button>
-         <button onClick={handleSubmit} className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-xl hover:scale-105 active:scale-95 transition-all">{isEdit ? 'บันทึกการแก้ไข' : 'บันทึกรายการ'}</button>
+         <button onClick={onCancel} className="flex-1 py-4 bg-white border border-slate-200 text-slate-500 rounded-2xl font-bold">ยกเลิก</button>
+         <button onClick={handleSubmit} className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-xl active:scale-95 transition-all">{isEdit ? 'บันทึกการแก้ไข' : 'บันทึกรายการ'}</button>
       </div>
     </div>
   );
@@ -297,6 +293,7 @@ export default function App() {
   const [filterMonth, setFilterMonth] = useState<string>('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterBank, setFilterBank] = useState<string>('all');
   const [walletFilterBank, setWalletFilterBank] = useState<string>('all'); 
   const [importing, setImporting] = useState(false);
 
@@ -310,16 +307,29 @@ export default function App() {
   }, []);
 
   const handleLogin = async () => {
-    try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch (e: any) { alert("Login failed: " + e.message); }
+    try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch (e: any) { 
+        if (e.code === 'auth/unauthorized-domain') alert("Domain not authorized in Firebase Console.");
+        else alert("Login failed: " + e.message); 
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    try { await signInAnonymously(auth); } catch (e: any) { alert(e.message); }
   };
 
   useEffect(() => {
     if (!user) return;
     setLoading(true);
-    const unsubAcc = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'accounts'), s => setAccounts(s.docs.map(d => ({ id: d.id, ...d.data() } as Account))));
+    const unsubAcc = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'accounts'), {
+      next: (s) => setAccounts(s.docs.map(d => ({ id: d.id, ...d.data() } as Account))),
+      error: (e) => console.error("Acc Error", e)
+    });
     const unsubTx = onSnapshot(query(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), orderBy('createdAt', 'desc')), s => {
       setTransactions(s.docs.map(d => ({ id: d.id, ...d.data() } as Transaction)));
-      if(!filterMonth && s.docs.length > 0) setFilterMonth(s.docs[0].data().date.substring(0, 7));
+      if(!filterMonth && s.docs.length > 0) {
+        const latest = s.docs[0].data().date.substring(0, 7);
+        setFilterMonth(latest);
+      }
       setLoading(false);
     });
     const unsubRec = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'recurring'), s => setRecurringItems(s.docs.map(d => ({ id: d.id, ...d.data() } as RecurringItem))));
@@ -353,6 +363,12 @@ export default function App() {
     setShowAddTx(false); setShowTxDetail(null);
   };
 
+  const handleToggleStatus = async (tx: Transaction) => {
+     if (!user) return;
+     const newStatus = tx.status === 'paid' ? 'unpaid' : 'paid';
+     await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', tx.id), { status: newStatus });
+  };
+
   const handleDeleteTx = async () => {
     if (!user || !showTxDetail) return;
     if (!confirm('ยืนยันลบ? ยอดเงินจะถูกคืนกลับ')) return;
@@ -366,7 +382,13 @@ export default function App() {
 
   const handleSaveAccount = async () => {
     if (!user || !editingAccount?.name) return;
-    const payload = { ...editingAccount, balance: Number(editingAccount.balance), limit: Number(editingAccount.limit || 0), totalDebt: Number(editingAccount.totalDebt || 0), color: getBankColor(editingAccount.bank) };
+    const payload = { 
+      ...editingAccount, 
+      balance: safeNumber(editingAccount.balance), 
+      limit: safeNumber(editingAccount.limit), 
+      totalDebt: safeNumber(editingAccount.totalDebt), 
+      color: getBankColor(editingAccount.bank) 
+    };
     if (isNewAccount) await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'accounts'), { ...payload, createdAt: serverTimestamp() });
     else await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'accounts', editingAccount.id), payload);
     setEditingAccount(null);
@@ -405,7 +427,6 @@ export default function App() {
           if (row.length < 5) continue;
           const clean = (idx: number) => idx > -1 ? row[idx].replace(/"/g, '').trim() : '';
           const num = (idx: number) => parseFloat(clean(idx).replace(/,/g, '')) || 0;
-
           const name = clean(getCol('ชื่อบัตร')) || 'General';
           const bank = clean(getCol('ธนาคาร')) || 'Other';
           const typeRaw = clean(getCol('ประเภทบัญชี'));
@@ -490,7 +511,12 @@ export default function App() {
 
   // Views
   const availableMonths = useMemo(() => Array.from(new Set(transactions.map(t => t.date.substring(0, 7)))).sort().reverse(), [transactions]);
-  const filteredTx = useMemo(() => transactions.filter(t => (!filterMonth || t.date.startsWith(filterMonth)) && (filterType === 'all' || t.type === filterType) && (filterStatus === 'all' || t.status === filterStatus)), [transactions, filterMonth, filterType, filterStatus]);
+  const filteredTx = useMemo(() => transactions.filter(t => 
+    (!filterMonth || t.date.startsWith(filterMonth)) && 
+    (filterType === 'all' || t.type === filterType) && 
+    (filterStatus === 'all' || t.status === filterStatus) &&
+    (filterBank === 'all' || accounts.find(a => a.id === t.accountId)?.bank === filterBank)
+  ), [transactions, filterMonth, filterType, filterStatus, filterBank, accounts]);
   
   const totalAssets = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0);
   const totalDebt = accounts.reduce((s, a) => s + (a.totalDebt || 0), 0);
@@ -513,8 +539,14 @@ export default function App() {
     return sum;
   }, [filteredTx, accounts]);
 
+  const monthlySummary = useMemo(() => {
+    const income = filteredTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+    const expense = filteredTx.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+    return { income, expense, balance: income - expense };
+  }, [filteredTx]);
+
   if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400">Loading...</div>;
-  if (!user) return <LoginScreen onLogin={handleLogin} />;
+  if (!user) return <LoginScreen onLogin={handleLogin} onGuest={handleGuestLogin} />;
 
   return (
     <div className="h-screen bg-slate-100 font-sans text-slate-900 flex flex-col items-center justify-center overflow-hidden">
@@ -533,15 +565,18 @@ export default function App() {
                    <div className="absolute top-0 right-0 p-24 bg-blue-600 opacity-20 rounded-full blur-3xl translate-x-10 -translate-y-10 group-hover:bg-purple-600 transition-colors duration-500"></div>
                    <div className="relative z-10">
                       <div className="flex justify-between items-center mb-4">
-                        <p className="text-xs text-slate-400">ความมั่งคั่งสุทธิ</p>
+                        <p className="text-xs text-slate-400">สรุป ({filterMonth ? getThaiMonthName(filterMonth + '-01') : 'ทั้งหมด'})</p>
                         <select className="bg-white/10 text-xs p-1.5 rounded-lg text-white border-none outline-none cursor-pointer hover:bg-white/20 transition" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
                             <option value="">ทั้งหมด</option>
                             {availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m + '-01')}</option>)}
                         </select>
                       </div>
-                      <h1 className="text-4xl font-bold tracking-tight">{formatCurrency(totalAssets - creditUsedReal - totalDebt)}</h1>
-                      <div className="grid grid-cols-2 gap-4 mt-6">
-                          <div className="bg-white/10 p-3 rounded-xl border border-white/5 backdrop-blur-sm"><p className="text-[10px] text-emerald-300 flex items-center gap-1"><TrendingUp size={10}/> สินทรัพย์</p><p className="text-lg font-bold">{formatCurrency(totalAssets)}</p></div>
+                      <div className="flex justify-between items-end mb-6">
+                         <div><p className="text-[10px] text-emerald-400">รายรับ</p><p className="text-xl font-bold">{formatCurrency(monthlySummary.income)}</p></div>
+                         <div className="text-right"><p className="text-[10px] text-rose-400">รายจ่าย</p><p className="text-xl font-bold">{formatCurrency(monthlySummary.expense)}</p></div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-white/10 p-3 rounded-xl border border-white/5 backdrop-blur-sm"><p className="text-[10px] text-blue-300 flex items-center gap-1"><Landmark size={10}/> ทรัพย์สิน</p><p className="text-lg font-bold">{formatCurrency(totalAssets)}</p></div>
                           <div className="bg-white/10 p-3 rounded-xl border border-white/5 backdrop-blur-sm"><p className="text-[10px] text-rose-300 flex items-center gap-1"><CreditCard size={10}/> หนี้สินรวม</p><p className="text-lg font-bold">{formatCurrency(creditUsedReal + totalDebt)}</p></div>
                       </div>
                    </div>
@@ -565,13 +600,15 @@ export default function App() {
                 </div>
 
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                   <h3 className="font-bold mb-3 text-sm flex items-center gap-2"><Building size={16}/> สรุปตามธนาคาร ({filterMonth ? getThaiMonthName(filterMonth+'-01') : 'ทั้งหมด'})</h3>
+                   <h3 className="font-bold mb-3 text-sm flex items-center gap-2"><Building size={16}/> สรุปตามธนาคาร</h3>
                    {Object.entries(bankSummary).map(([bank, amt]) => (<div key={bank} className="flex justify-between text-xs mb-2 border-b border-slate-200 pb-2 last:border-0 last:mb-0"><span>{bank}</span><span className="font-bold text-slate-700">{formatCurrency(amt)}</span></div>))}
+                   <div className="mt-2 pt-2 border-t border-slate-300 flex justify-between text-xs font-bold text-slate-800"><span>รวมทั้งหมด</span><span>{formatCurrency(Object.values(bankSummary).reduce((a,b)=>a+b,0))}</span></div>
                 </div>
              </div>
            )}
            {activeTab === 'wallet' && (
              <div className="pt-4 space-y-6">
+                <div className="flex justify-between items-center px-1"><h2 className="text-2xl font-bold">กระเป๋าตังค์</h2><button onClick={() => { setIsNewAccount(true); setEditingAccount({ id: '', name: '', bank: '', type: 'bank', balance: 0, color: 'from-slate-700 to-slate-900' }); }} className="bg-slate-900 text-white p-2 rounded-full shadow"><Plus size={20}/></button></div>
                 <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                    <button onClick={() => setWalletFilterBank('all')} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${walletFilterBank === 'all' ? 'bg-slate-900 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-500'}`}>ทั้งหมด</button>
                    {[...new Set(accounts.map(a => a.bank))].sort().map(bank => (
@@ -594,6 +631,7 @@ export default function App() {
                    <select className="bg-white border rounded-xl text-xs p-2.5 min-w-[100px] shadow-sm outline-none focus:border-slate-400" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}><option value="">ทุกเดือน</option>{availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m+'-01')}</option>)}</select>
                    <select className="bg-white border rounded-xl text-xs p-2.5 shadow-sm outline-none focus:border-slate-400" value={filterType} onChange={e => setFilterType(e.target.value)}><option value="all">ทุกประเภท</option><option value="expense">รายจ่าย</option><option value="income">รายรับ</option></select>
                    <select className="bg-white border rounded-xl text-xs p-2.5 shadow-sm outline-none focus:border-slate-400" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">ทุกสถานะ</option><option value="paid">จ่ายแล้ว</option><option value="unpaid">รอจ่าย</option></select>
+                   <select className="bg-white border rounded-xl text-xs p-2.5 shadow-sm outline-none focus:border-slate-400" value={filterBank} onChange={e => setFilterBank(e.target.value)}><option value="all">ทุกธนาคาร</option>{[...new Set(accounts.map(a => a.bank))].map(b => <option key={b} value={b}>{b}</option>)}</select>
                 </div>
                 <div className="space-y-3 mb-8">{filteredTx.map(tx => (
                   <div key={tx.id} onClick={() => { setNewTxData(tx); setShowTxDetail(tx); }} className="bg-white p-4 border border-slate-100 rounded-2xl flex justify-between items-center cursor-pointer relative overflow-hidden group hover:shadow-md transition-all active:scale-[0.99]">
@@ -608,15 +646,26 @@ export default function App() {
                      </div>
                   </div>
                 ))}</div>
-                <div className="bg-slate-50 p-4 rounded-xl text-center">
-                   <p className="text-xs text-slate-500">รวมทั้งหมด ({filteredTx.length} รายการ)</p>
+                <div className="bg-slate-50 p-4 rounded-xl text-center mb-6">
+                   <p className="text-xs text-slate-500 mb-1">รวมยอดเดือนนี้</p>
+                   <p className="text-xl font-bold text-slate-800">{formatCurrency(filteredTx.reduce((s, t) => s + (t.type === 'expense' ? t.amount : 0), 0))}</p>
+                </div>
+                {/* Summary Table at Bottom */}
+                <div className="bg-white border rounded-2xl p-4 shadow-sm mb-8">
+                   <h3 className="font-bold mb-3 text-sm">สรุปยอดแยกธนาคาร</h3>
+                   {Object.entries(bankSummary).map(([bank, amt]) => (
+                     <div key={bank} className="flex justify-between text-xs mb-2 border-b border-slate-100 pb-2">
+                        <span>{bank}</span>
+                        <span className="font-bold">{formatCurrency(amt)}</span>
+                     </div>
+                   ))}
+                   <div className="flex justify-between text-xs font-bold pt-2 text-slate-900"><span>รวมทั้งหมด</span><span>{formatCurrency(Object.values(bankSummary).reduce((a,b)=>a+b,0))}</span></div>
                 </div>
              </div>
            )}
            {activeTab === 'settings' && (
              <div className="pt-4">
                 <h2 className="text-2xl font-bold mb-4">ตั้งค่า</h2>
-                
                 <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden mb-4 shadow-sm">
                    <div className="p-4 border-b border-slate-50 bg-slate-50/50"><h3 className="font-bold flex items-center gap-2 text-sm"><UserCircle size={16}/> ข้อมูลส่วนตัว</h3></div>
                    <div className="p-4 text-sm text-slate-600">
@@ -629,16 +678,16 @@ export default function App() {
                    <div className="p-4 border-b border-slate-50 bg-slate-50/50"><h3 className="font-bold flex items-center gap-2 text-sm"><Repeat size={16}/> รายจ่ายประจำ (Recurring)</h3></div>
                    <div className="p-4 space-y-3">
                       <div className="flex gap-2">
-                         <input type="text" placeholder="รายการ (เช่น Netflix)" className="flex-[2] p-2.5 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:ring-2 focus:ring-slate-100 transition" value={newRecurring.description || ''} onChange={e => setNewRecurring({...newRecurring, description: e.target.value})}/>
-                         <input type="number" placeholder="บาท" className="w-16 p-2.5 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:ring-2 focus:ring-slate-100 transition" onChange={e => setNewRecurring({...newRecurring, amount: Number(e.target.value)})}/>
-                         <input type="number" placeholder="วันที่" className="w-12 p-2.5 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:ring-2 focus:ring-slate-100 transition" onChange={e => setNewRecurring({...newRecurring, day: Number(e.target.value)})}/>
+                         <input type="text" placeholder="รายการ" className="flex-[2] p-2.5 border rounded-xl text-xs bg-slate-50" value={newRecurring.description || ''} onChange={e => setNewRecurring({...newRecurring, description: e.target.value})}/>
+                         <input type="number" placeholder="บาท" className="w-16 p-2.5 border rounded-xl text-xs bg-slate-50" onChange={e => setNewRecurring({...newRecurring, amount: Number(e.target.value)})}/>
+                         <input type="number" placeholder="วัน" className="w-12 p-2.5 border rounded-xl text-xs bg-slate-50" onChange={e => setNewRecurring({...newRecurring, day: Number(e.target.value)})}/>
                          <select className="w-24 p-2.5 border rounded-xl text-xs bg-slate-50" onChange={e => setNewRecurring({...newRecurring, accountId: e.target.value})}><option value="">ตัดผ่าน...</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
                       </div>
                       <button onClick={handleSaveRecurring} className="w-full py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition shadow-md active:scale-95">เพิ่ม Template</button>
                       <div className="mt-3 space-y-2">
                          {recurringItems.map(r => (
                            <div key={r.id} className="flex justify-between items-center text-xs bg-slate-50 p-3 rounded-xl border border-slate-100">
-                              <div><span className="font-bold text-slate-700">{r.description}</span> <span className="text-slate-400 ml-1">(ทุกวันที่ {r.day})</span></div>
+                              <div><span className="font-bold text-slate-700">{r.description}</span> <span className="text-slate-400 ml-1">(วันที่ {r.day}) - {accounts.find(a=>a.id===r.accountId)?.name}</span></div>
                               <div className="flex items-center gap-2">
                                  <span className="font-medium">{formatCurrency(r.amount)}</span>
                                  <button onClick={() => handleUseRecurring(r)} className="px-3 py-1 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition font-bold">สร้าง</button>
@@ -651,7 +700,7 @@ export default function App() {
                 </div>
 
                 <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
-                   <button onClick={() => setShowImport(true)} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Upload size={18} className="text-blue-500"/> <span className="text-sm font-medium">นำเข้า CSV (Import)</span></button>
+                   <button onClick={() => setShowImport(true)} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Upload size={18} className="text-blue-500"/> <span className="text-sm font-medium">นำเข้า CSV (Restore)</span></button>
                    <button onClick={handleExportCSV} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Download size={18} className="text-emerald-500"/> <span className="text-sm font-medium">ส่งออก CSV (Backup)</span></button>
                    <button onClick={handleLogout} className="w-full p-4 flex items-center gap-3 hover:bg-slate-50 text-left text-rose-600 transition"><LogOut size={18}/> <span className="text-sm font-bold">ออกจากระบบ</span></button>
                 </div>
@@ -699,6 +748,7 @@ export default function App() {
                    <AddTxForm accounts={accounts} initialData={showTxDetail || newTxData} isEdit={!!showTxDetail} onSave={handleSaveTx} onCancel={() => { setShowAddTx(false); setShowTxDetail(null); }} />
                    {showTxDetail && (
                      <div className="mt-4 flex gap-2">
+                       <button onClick={() => handleToggleStatus(showTxDetail)} className={`flex-1 py-4 font-bold rounded-2xl shadow-sm transition ${showTxDetail.status==='paid'?'bg-amber-100 text-amber-700 hover:bg-amber-200':'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}>{showTxDetail.status==='paid'?'เปลี่ยนเป็นรอจ่าย':'ยืนยันการจ่าย'}</button>
                        <button onClick={handleDeleteTx} className="flex-1 py-4 text-rose-600 bg-rose-50 rounded-2xl font-bold hover:bg-rose-100 transition">ลบรายการ</button>
                      </div>
                    )}
