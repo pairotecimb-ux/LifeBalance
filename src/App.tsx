@@ -12,9 +12,9 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration ---
-const firebaseConfig = JSON.parse(__firebase_config || '{}'); // รับค่า Config จาก Environment
+const firebaseConfig = JSON.parse(__firebase_config || '{}');
 
-// Fallback for safety if config is missing (Prevents crash on initialization)
+// Fallback เพื่อป้องกันหน้าขาวถ้าไม่มี Config
 const safeConfig = Object.keys(firebaseConfig).length > 0 ? firebaseConfig : {
   apiKey: "api-key-placeholder",
   authDomain: "domain-placeholder",
@@ -27,8 +27,8 @@ const safeConfig = Object.keys(firebaseConfig).length > 0 ? firebaseConfig : {
 const app = initializeApp(safeConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v8.0.0 (Portal UI)";
-const appId = 'credit-manager-pro-v8'; // New ID for clean start
+const APP_VERSION = "v8.1.0 (Portal Edition)";
+const appId = 'credit-manager-pro-v8-final'; // เปลี่ยน ID เพื่อเริ่ม Database ใหม่ที่สะอาด
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -97,6 +97,7 @@ const getThaiMonthName = (dateStr: string) => {
   } catch (e) { return dateStr; }
 };
 
+// แปลง "ธ.ค.-68" -> "2025-12-01"
 const parseThaiMonthToDate = (str: string) => {
   if (!str) return new Date().toISOString().split('T')[0];
   try {
@@ -445,7 +446,6 @@ export default function App() {
           const balanceVal = num(getCol('ยอดเงินในบัญชี'));
           let type: AccountType = (typeRaw.includes('บัญชี') || bank.includes('ธนาคาร') || balanceVal > 0 || typeRaw.toLowerCase().includes('debit')) ? 'bank' : typeRaw.includes('เงินสด') ? 'cash' : 'credit';
           const key = `${bank}-${name}`;
-          
           let accId = existing.get(key) || newCache.get(key);
           if (name && name !== 'N/A') {
              const accData: any = { 
@@ -462,11 +462,11 @@ export default function App() {
                 const limitUsed = num(getCol('วงเงินที่ใช้ไป'));
                 accData.balance = limitRem > 0 ? limitRem : (limitUsed === 0 ? accData.limit : (accData.limit - limitUsed));
              } else { accData.balance = balanceVal; }
-             
+             if (isNaN(accData.balance)) accData.balance = 0;
              if (accId) batch.update(doc(db, 'artifacts', appId, 'users', user.uid, 'accounts', accId), accData);
              else {
                const ref = doc(collection(db, 'artifacts', appId, 'users', user.uid, 'accounts'));
-               batch.set(ref, { ...accData, balance: accData.balance||0, limit: accData.limit||0, totalDebt: accData.totalDebt||0, createdAt: serverTimestamp() });
+               batch.set(ref, { ...accData, createdAt: serverTimestamp() });
                accId = ref.id; newCache.set(key, accId);
              }
              count++;
@@ -728,7 +728,7 @@ export default function App() {
         {(showAddTx || showTxDetail) && (
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end justify-center animate-fade-in">
              <div className="bg-white w-full h-[90%] rounded-t-3xl p-6 shadow-2xl relative flex flex-col animate-slide-up">
-                <div className="flex justify-between items-center mb-4 shrink-0"><h3 className="font-bold text-xl">{showTxDetail ? 'แก้ไขรายการ' : 'รายการใหม่'}</h3><button onClick={() => { setShowAddTx(false); setShowTxDetail(null); }} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition"><X size={24}/></button></div>
+                <div className="flex justify-between items-center mb-4 shrink-0"><h3 className="font-bold text-xl">{showTxDetail ? 'แก้ไข' : 'เพิ่ม'}รายการ</h3><button onClick={() => { setShowAddTx(false); setShowTxDetail(null); }} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition"><X size={24}/></button></div>
                 <div className="flex-1 overflow-y-auto">
                    <AddTxForm accounts={accounts} initialData={showTxDetail || newTxData} isEdit={!!showTxDetail} onSave={handleSaveTx} onCancel={() => { setShowAddTx(false); setShowTxDetail(null); }} />
                    {showTxDetail && (
