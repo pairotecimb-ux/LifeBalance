@@ -399,18 +399,20 @@ export default function App() {
                    </div>
                 </div>
 
-                <div className="bg-slate-50 p-4 rounded-xl">
-                   <h3 className="font-bold mb-3 text-sm">สรุปยอดจ่ายตามธนาคาร</h3>
-                   {Object.entries(bankSummary).map(([bank, amt]) => (
-                     <div key={bank} className="flex justify-between text-xs mb-1 border-b border-slate-200 pb-1 last:border-0"><span>{bank}</span><span className="font-bold">{formatCurrency(amt)}</span></div>
-                   ))}
-                   <div className="flex justify-between text-xs font-bold pt-2 border-t mt-2"><span>รวมสุทธิ</span><span>{formatCurrency(Object.values(bankSummary).reduce((a,b)=>a+b,0))}</span></div>
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                   <h3 className="font-bold mb-3 text-sm flex items-center gap-2"><Building size={16}/> สรุปตามธนาคาร ({filterMonth ? getThaiMonthName(filterMonth+'-01') : 'ทั้งหมด'})</h3>
+                   {Object.entries(bankSummary).map(([bank, amt]) => (<div key={bank} className="flex justify-between text-xs mb-2 border-b border-slate-200 pb-2 last:border-0 last:mb-0"><span>{bank}</span><span className="font-bold text-slate-700">{formatCurrency(amt)}</span></div>))}
+                   <div className="mt-2 pt-2 border-t border-slate-300 flex justify-between text-xs font-bold text-slate-800"><span>รวมทั้งหมด</span><span>{formatCurrency(Object.values(bankSummary).reduce((a,b)=>a+b,0))}</span></div>
                 </div>
              </div>
            )}
            {activeTab === 'wallet' && (
              <div className="pt-4 space-y-6">
-                <div className="flex justify-between items-center"><h2 className="text-2xl font-bold">กระเป๋าตังค์</h2><button onClick={() => { setIsNewAccount(true); setEditingAccount({ id: '', name: '', bank: '', type: 'bank', balance: 0, color: 'from-slate-700 to-slate-900' }); }} className="bg-slate-900 text-white p-2 rounded-full shadow"><Plus size={20}/></button></div>
+                <div className="flex justify-between items-center px-1">
+                   <h2 className="text-2xl font-bold">กระเป๋าตังค์</h2>
+                   {/* ✅ ปุ่มเพิ่มบัญชี Manual กลับมาแล้ว (มุมขวาบนของหน้า Wallet) */}
+                   <button onClick={() => { setIsNewAccount(true); setEditingAccount({ id: '', name: '', bank: '', type: 'bank', balance: 0, color: 'from-slate-700 to-slate-900' }); }} className="bg-slate-900 text-white w-8 h-8 rounded-full flex items-center justify-center shadow hover:scale-110 transition"><Plus size={16}/></button>
+                </div>
                 <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide"><button onClick={() => setFilterBank('all')} className={`px-3 py-1 rounded-full text-xs border ${filterBank==='all'?'bg-black text-white':''}`}>ทั้งหมด</button>{[...new Set(accounts.map(a => a.bank))].sort().map(bank => (<button key={bank} onClick={() => setFilterBank(bank)} className={`px-3 py-1 rounded-full text-xs border ${filterBank===bank?'bg-black text-white':''}`}>{bank}</button>))}</div>
                 {[...new Set(accounts.filter(a => filterBank === 'all' || a.bank === filterBank).map(a => a.bank))].sort().map(bank => (
                   <div key={bank}>
@@ -428,12 +430,13 @@ export default function App() {
            )}
            {activeTab === 'transactions' && (
              <div className="pt-4">
-                <div className="flex gap-2 mb-4 overflow-x-auto">
-                   <select className="bg-white border rounded text-xs p-2 min-w-[100px]" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}><option value="">ทุกเดือน</option>{availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m+'-01')}</option>)}</select>
-                   <select className="bg-white border rounded text-xs p-2" value={filterType} onChange={e => setFilterType(e.target.value)}><option value="all">ทุกประเภท</option><option value="expense">รายจ่าย</option><option value="income">รายรับ</option></select>
+                <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
+                   <select className="bg-white border rounded-xl text-xs p-2.5 min-w-[100px] shadow-sm outline-none focus:border-slate-400" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}><option value="">ทุกเดือน</option>{availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m+'-01')}</option>)}</select>
+                   <select className="bg-white border rounded-xl text-xs p-2.5 shadow-sm outline-none focus:border-slate-400" value={filterType} onChange={e => setFilterType(e.target.value)}><option value="all">ทุกประเภท</option><option value="expense">รายจ่าย</option><option value="income">รายรับ</option></select>
+                   <select className="bg-white border rounded-xl text-xs p-2.5 shadow-sm outline-none focus:border-slate-400" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">ทุกสถานะ</option><option value="paid">จ่ายแล้ว</option><option value="unpaid">รอจ่าย</option></select>
                 </div>
-                <div className="space-y-2 mb-8">{filteredTx.map(tx => (
-                  <div key={tx.id} onClick={() => { setTxForm(tx); setShowAddTx(true); }} className="bg-white p-4 border rounded-xl flex justify-between items-center cursor-pointer">
+                <div className="space-y-3 mb-8">{filteredTx.map(tx => (
+                  <div key={tx.id} onClick={() => { setTxForm(tx); setShowAddTx(true); }} className="bg-white p-4 border border-slate-100 rounded-2xl flex justify-between items-center cursor-pointer">
                      <div><p className="font-bold text-sm truncate w-40">{tx.description}</p><p className="text-[10px] text-slate-400">{formatDate(tx.date)} • {accounts.find(a=>a.id===tx.accountId)?.name}</p></div>
                      <div className="text-right"><p className={`font-bold ${tx.type==='income'?'text-emerald-600':'text-slate-900'}`}>{tx.type==='expense'?'-':''}{formatCurrency(tx.amount)}</p>{tx.status==='unpaid'&&<span className="text-[9px] bg-amber-100 text-amber-600 px-1 rounded">รอจ่าย</span>}</div>
                   </div>
