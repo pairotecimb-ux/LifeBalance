@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration ---
+// Config ของคุณ (Hardcoded เพื่อความเสถียร)
 const firebaseConfig = {
   apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
   authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
@@ -24,8 +25,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v10.0.1 (Fixed & Full)";
-const appId = 'credit-manager-pro-v10-fixed';
+const APP_VERSION = "v10.1.0 (God Mode)";
+const appId = 'credit-manager-pro-v10-final';
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -177,7 +178,7 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
           {account.type === 'bank' ? <Landmark size={20}/> : account.type === 'cash' ? <Coins size={20}/> : <CreditCard size={20}/>}
         </div>
         <div>
-          <p className="text-[10px] opacity-80 uppercase font-bold tracking-wider flex items-center gap-1">{account.bank} {account.cardType && <span className="bg-white/20 px-1 rounded">{account.cardType}</span>}</p>
+          <p className="text-[10px] opacity-80 uppercase font-bold tracking-wider flex items-center gap-1">{account.bank}</p>
           <p className="font-bold text-lg leading-none truncate w-40 drop-shadow-md">{account.name}</p>
           {account.accountNumber && <p className="text-[10px] opacity-70 font-mono mt-1 tracking-widest">{account.accountNumber}</p>}
         </div>
@@ -188,7 +189,7 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
     <div className="space-y-2 relative z-10">
       <div className="flex justify-between items-end">
         <p className="text-xs opacity-80 font-medium">{account.type === 'credit' ? 'วงเงินคงเหลือ' : 'ยอดเงินในบัญชี'}</p>
-        <p className="text-2xl font-bold tracking-tight drop-shadow-sm">{formatCurrency(account.balance)}</p>
+        <p className="text-2xl font-bold tracking-tight drop-shadow-sm">{safeFormatCurrency(account.balance)}</p>
       </div>
       {account.type === 'credit' && safeNumber(account.limit) > 0 && (
         <>
@@ -196,8 +197,8 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
              <div className="bg-white h-full shadow-[0_0_10px_rgba(255,255,255,0.5)] transition-all duration-1000" style={{ width: `${Math.min(((safeNumber(account.limit) - safeNumber(account.balance)) / safeNumber(account.limit)) * 100, 100)}%` }}></div>
           </div>
           <div className="flex justify-between text-[10px] opacity-70 font-medium">
-             <span>ใช้ไป: {formatCurrency(safeNumber(account.limit) - safeNumber(account.balance))}</span>
-             <span>วงเงิน: {formatCurrency(account.limit || 0)}</span>
+             <span>ใช้ไป: {safeFormatCurrency(safeNumber(account.limit) - safeNumber(account.balance))}</span>
+             <span>วงเงิน: {safeFormatCurrency(account.limit || 0)}</span>
           </div>
           {(account.statementDay || account.dueDay) && (
              <div className="flex gap-2 text-[9px] opacity-60 mt-1">
@@ -210,7 +211,7 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
       {safeNumber(account.totalDebt) > 0 && (
          <div className="mt-2 pt-2 border-t border-white/20 flex items-center gap-2">
            <div className="bg-rose-500/20 p-1 rounded-md"><TrendingUp size={12} className="text-rose-200 rotate-180"/></div>
-           <p className="text-xs text-rose-100 font-bold">ภาระหนี้: {formatCurrency(account.totalDebt)}</p>
+           <p className="text-xs text-rose-100 font-bold">ภาระหนี้: {safeFormatCurrency(account.totalDebt)}</p>
          </div>
       )}
     </div>
@@ -222,6 +223,7 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
   const [selectedBank, setSelectedBank] = useState('');
   const [selectedType, setSelectedType] = useState<string>('');
   
+  // Use effect to update form when initialData changes (fixes stale data)
   useEffect(() => { setFormData(initialData); }, [initialData]);
 
   const banks = useMemo(() => Array.from(new Set(accounts.map(a => a.bank))).sort(), [accounts]);
@@ -751,7 +753,7 @@ export default function App() {
                    <AddTxForm accounts={accounts} initialData={showTxDetail || newTxData} isEdit={!!showTxDetail} onSave={handleSaveTx} onCancel={() => { setShowAddTx(false); setShowTxDetail(null); }} />
                    {showTxDetail && (
                      <div className="mt-4 flex gap-2">
-                       <button onClick={() => handleToggleStatus(showTxDetail)} className={`flex-1 py-4 font-bold rounded-2xl shadow-sm transition ${showTxDetail.status==='paid'?'bg-amber-100 text-amber-600':'bg-emerald-100 text-emerald-600'}`}>{showTxDetail.status==='paid'?'เปลี่ยนเป็นรอจ่าย':'ยืนยันการจ่าย'}</button>
+                       <button onClick={() => handleToggleStatus(showTxDetail)} className={`flex-1 py-4 font-bold rounded-2xl shadow-sm transition ${showTxDetail.status==='paid'?'bg-amber-100 text-amber-700 hover:bg-amber-200':'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}>{showTxDetail.status==='paid'?'เปลี่ยนเป็นรอจ่าย':'ยืนยันการจ่าย'}</button>
                        <button onClick={handleDeleteTx} className="flex-1 py-4 text-rose-600 bg-rose-50 rounded-2xl font-bold hover:bg-rose-100 transition">ลบรายการ</button>
                      </div>
                    )}
