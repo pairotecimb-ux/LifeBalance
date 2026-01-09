@@ -12,7 +12,6 @@ import {
 } from 'firebase/firestore';
 
 // --- Configuration ---
-// Config ของคุณ (Hardcoded เพื่อความเสถียร)
 const firebaseConfig = {
   apiKey: 'AIzaSyCSUj4FDV8xMnNjKcAtqBx4YMcRVznqV-E',
   authDomain: 'credit-card-manager-b95c8.firebaseapp.com',
@@ -22,10 +21,17 @@ const firebaseConfig = {
   appId: '1:486114228268:web:6d00ae1430aae1e252b989',
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const APP_VERSION = "v12.1.0 (Fixed & Restore)";
+// Initialize Firebase safely
+let app, auth, db;
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (e) {
+  console.error("Firebase Init Error:", e);
+}
+
+const APP_VERSION = "v12.2.0 (Perfected)";
 const appId = 'credit-manager-pro-v12-final';
 
 // --- Types ---
@@ -66,7 +72,6 @@ interface RecurringItem {
   accountId: string;
   category: string;
   day: number;
-  monthsLeft?: number; // จำนวนเดือนที่เหลือ
 }
 
 // --- Helpers ---
@@ -101,18 +106,29 @@ const getThaiMonthName = (dateStr: string) => {
   } catch (e) { return dateStr; }
 };
 
+// Parser: ธ.ค.-68 -> 2025-12-01
 const parseThaiMonthToDate = (str: string) => {
   if (!str) return new Date().toISOString().split('T')[0];
   try {
     const parts = str.trim().split(/[-/]/); 
     if (parts.length < 2) return new Date().toISOString().split('T')[0];
-    const mStr = parts[0];
-    const yStr = parts[1];
+
+    let mStr = parts[0];
+    let yStr = parts[1];
+    
+    // Swap if format is YYYY-MM
+    if(!isNaN(Number(mStr)) && mStr.length === 4) {
+       yStr = mStr;
+       mStr = parts[1];
+    }
+
     const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
     const monthIndex = months.findIndex(m => mStr.includes(m));
+    
     let year = parseInt(yStr);
     if (year < 100) year += 2500; 
     year -= 543; 
+    
     if (monthIndex > -1 && !isNaN(year)) {
       const m = (monthIndex + 1).toString().padStart(2, '0');
       return `${year}-${m}-01`; 
@@ -153,7 +169,6 @@ const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดิ�
 const LoginScreen = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () => void }) => (
   <div className="h-full flex flex-col items-center justify-center p-6 bg-slate-900 text-white text-center relative overflow-hidden">
     <div className="absolute top-[-20%] left-[-20%] w-[300px] h-[300px] bg-blue-600/30 rounded-full blur-[80px] animate-pulse"></div>
-    <div className="absolute bottom-[-20%] right-[-20%] w-[300px] h-[300px] bg-purple-600/30 rounded-full blur-[80px] animate-pulse delay-700"></div>
     <div className="relative z-10 w-full max-w-sm backdrop-blur-xl bg-white/5 p-8 rounded-3xl border border-white/10 shadow-2xl">
       <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl">
         <Wallet className="w-10 h-10 text-white" />
@@ -231,7 +246,7 @@ const AddTxForm = ({ accounts, categories, initialData, onSave, onCancel, isEdit
     <div className="space-y-6 pb-10">
       <div className="flex bg-slate-100 p-1.5 rounded-2xl shadow-inner">
         {[{ id: 'expense', label: 'รายจ่าย', color: 'text-rose-600' }, { id: 'income', label: 'รายรับ', color: 'text-emerald-600' }, { id: 'transfer', label: 'โอน/ชำระ', color: 'text-blue-600' }].map((t) => (
-          <button key={t.id} onClick={() => setFormData({ ...formData, type: t.id as any })} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${formData.type === t.id ? `bg-white shadow-md ${t.color}` : 'text-slate-400'}`}>{t.label}</button>
+          <button key={t.id} onClick={() => setFormData({ ...formData, type: t.id as any })} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-300 ${formData.type === t.id ? `bg-white shadow-md ${t.color}` : 'text-slate-400'}`}>{t.label}</button>
         ))}
       </div>
 
@@ -266,7 +281,10 @@ const AddTxForm = ({ accounts, categories, initialData, onSave, onCancel, isEdit
          <input type="text" placeholder="รายละเอียด (เช่น ค่ากาแฟ)" className="w-full p-4 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-slate-50 focus:border-slate-400 bg-white shadow-sm transition-all font-medium" value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
          <div className="flex gap-3">
            <input type="date" className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm text-center bg-white shadow-sm font-medium" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
-           <select className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm bg-white shadow-sm font-medium" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
+           <select className="flex-1 p-3 rounded-2xl border border-slate-200 text-sm bg-white shadow-sm font-medium" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
+             <option value="">-- หมวดหมู่ --</option>
+             {categories.map(c=><option key={c} value={c}>{c}</option>)}
+           </select>
          </div>
          {formData.type === 'expense' && (
              <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-2xl">
@@ -310,6 +328,7 @@ export default function App() {
   const [filterMonth, setFilterMonth] = useState<string>('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterBank, setFilterBank] = useState<string>('all'); // Filter for Transactions Tab
   const [walletFilterBank, setWalletFilterBank] = useState<string>('all'); 
   const [importing, setImporting] = useState(false);
 
@@ -462,7 +481,6 @@ export default function App() {
           if (row.length < 5) continue;
           const clean = (idx: number) => idx > -1 ? row[idx].replace(/"/g, '').trim() : '';
           const num = (idx: number) => parseFloat(clean(idx).replace(/,/g, '')) || 0;
-
           const name = clean(getCol('ชื่อบัตร')) || 'General';
           const bank = clean(getCol('ธนาคาร')) || 'Other';
           const typeRaw = clean(getCol('ประเภทบัญชี'));
@@ -547,7 +565,12 @@ export default function App() {
 
   // Views
   const availableMonths = useMemo(() => Array.from(new Set(transactions.map(t => t.date.substring(0, 7)))).sort().reverse(), [transactions]);
-  const filteredTx = useMemo(() => transactions.filter(t => (!filterMonth || t.date.startsWith(filterMonth)) && (filterType === 'all' || t.type === filterType) && (filterStatus === 'all' || t.status === filterStatus)), [transactions, filterMonth, filterType, filterStatus]);
+  const filteredTx = useMemo(() => transactions.filter(t => 
+    (!filterMonth || t.date.startsWith(filterMonth)) && 
+    (filterType === 'all' || t.type === filterType) && 
+    (filterStatus === 'all' || t.status === filterStatus) &&
+    (filterBank === 'all' || accounts.find(a => a.id === t.accountId)?.bank === filterBank)
+  ), [transactions, filterMonth, filterType, filterStatus, filterBank, accounts]);
   
   const totalAssets = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0);
   const totalDebt = accounts.reduce((s, a) => s + (a.totalDebt || 0), 0);
@@ -644,7 +667,8 @@ export default function App() {
                    {[...new Set(accounts.map(a => a.bank))].sort().map(bank => (
                       <button key={bank} onClick={() => setWalletFilterBank(bank)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${walletFilterBank === bank ? 'bg-slate-900 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-500'}`}>{bank}</button>
                    ))}
-                   <button onClick={() => { setIsNewAccount(true); setEditingAccount({ id: '', name: '', bank: '', type: 'bank', balance: 0, color: 'from-slate-700 to-slate-900' }); }} className="bg-slate-900 text-white w-8 h-8 rounded-full flex items-center justify-center shadow ml-auto flex-none"><Plus size={16}/></button>
+                   {/* ปุ่มเพิ่มบัญชี Manual กลับมาแล้วครับ */}
+                   <button onClick={() => { setIsNewAccount(true); setEditingAccount({ id: '', name: '', bank: '', type: 'bank', balance: 0, color: 'from-slate-700 to-slate-900' }); }} className="bg-slate-900 text-white w-8 h-8 rounded-full flex items-center justify-center shadow ml-auto flex-none hover:scale-110 transition"><Plus size={16}/></button>
                 </div>
                 <div className="space-y-6">
                    {[...new Set(accounts.filter(a => walletFilterBank === 'all' || a.bank === walletFilterBank).map(a => a.bank))].sort().map(bank => (
@@ -662,6 +686,7 @@ export default function App() {
                    <select className="bg-white border rounded-xl text-xs p-2.5 min-w-[100px] shadow-sm outline-none focus:border-slate-400" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}><option value="">ทุกเดือน</option>{availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m+'-01')}</option>)}</select>
                    <select className="bg-white border rounded-xl text-xs p-2.5 shadow-sm outline-none focus:border-slate-400" value={filterType} onChange={e => setFilterType(e.target.value)}><option value="all">ทุกประเภท</option><option value="expense">รายจ่าย</option><option value="income">รายรับ</option></select>
                    <select className="bg-white border rounded-xl text-xs p-2.5 shadow-sm outline-none focus:border-slate-400" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">ทุกสถานะ</option><option value="paid">จ่ายแล้ว</option><option value="unpaid">รอจ่าย</option></select>
+                   <select className="bg-white border rounded-xl text-xs p-2.5 shadow-sm outline-none focus:border-slate-400" value={filterBank} onChange={e => setFilterBank(e.target.value)}><option value="all">ทุกธนาคาร</option>{[...new Set(accounts.map(a => a.bank))].map(b => <option key={b} value={b}>{b}</option>)}</select>
                 </div>
                 <div className="space-y-3 mb-8">{filteredTx.map(tx => (
                   <div key={tx.id} onClick={() => { setNewTxData(tx); setShowTxDetail(tx); }} className="bg-white p-4 border border-slate-100 rounded-2xl flex justify-between items-center cursor-pointer relative overflow-hidden group hover:shadow-md transition-all active:scale-[0.99]">
@@ -676,8 +701,20 @@ export default function App() {
                      </div>
                   </div>
                 ))}</div>
-                <div className="bg-slate-50 p-4 rounded-xl text-center">
-                   <p className="text-xs text-slate-500">รวมทั้งหมด ({filteredTx.length} รายการ)</p>
+                <div className="bg-slate-50 p-4 rounded-xl text-center mb-6">
+                   <p className="text-xs text-slate-500 mb-1">รวมยอดเดือนนี้</p>
+                   <p className="text-xl font-bold text-slate-800">{formatCurrency(filteredTx.reduce((s, t) => s + (t.type === 'expense' ? t.amount : 0), 0))}</p>
+                </div>
+                {/* Summary Table at Bottom */}
+                <div className="bg-white border rounded-2xl p-4 shadow-sm mb-8">
+                   <h3 className="font-bold mb-3 text-sm">สรุปยอดแยกธนาคาร</h3>
+                   {Object.entries(bankSummary).map(([bank, amt]) => (
+                     <div key={bank} className="flex justify-between text-xs mb-2 border-b border-slate-100 pb-2">
+                        <span>{bank}</span>
+                        <span className="font-bold">{formatCurrency(amt)}</span>
+                     </div>
+                   ))}
+                   <div className="flex justify-between text-xs font-bold pt-2 text-slate-900"><span>รวมทั้งหมด</span><span>{formatCurrency(Object.values(bankSummary).reduce((a,b)=>a+b,0))}</span></div>
                 </div>
              </div>
            )}
@@ -719,7 +756,7 @@ export default function App() {
                 </div>
 
                 <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
-                   <button onClick={() => setShowImport(true)} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Upload size={18} className="text-blue-500"/> <span className="text-sm font-medium">นำเข้า CSV (Restore)</span></button>
+                   <button onClick={() => setShowImport(true)} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Upload size={18} className="text-blue-500"/> <span className="text-sm font-medium">นำเข้า CSV (Import)</span></button>
                    <button onClick={handleExportCSV} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Download size={18} className="text-emerald-500"/> <span className="text-sm font-medium">ส่งออก CSV (Backup)</span></button>
                    <button onClick={() => setShowCategoryMgr(true)} className="w-full p-4 border-b border-slate-50 flex items-center gap-3 hover:bg-slate-50 text-left transition"><Tag size={18} className="text-amber-500"/> <span className="text-sm font-medium">จัดการหมวดหมู่</span></button>
                    <button onClick={handleLogout} className="w-full p-4 flex items-center gap-3 hover:bg-slate-50 text-left text-rose-600 transition"><LogOut size={18}/> <span className="text-sm font-bold">ออกจากระบบ</span></button>
