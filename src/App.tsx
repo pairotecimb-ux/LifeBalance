@@ -14,7 +14,7 @@ import {
 // --- Configuration ---
 const firebaseConfig = JSON.parse(__firebase_config || '{}');
 
-// Fallback เพื่อป้องกันหน้าขาวถ้าไม่มี Config
+// Fallback กันตาย
 const safeConfig = Object.keys(firebaseConfig).length > 0 ? firebaseConfig : {
   apiKey: "api-key-placeholder",
   authDomain: "domain-placeholder",
@@ -27,8 +27,8 @@ const safeConfig = Object.keys(firebaseConfig).length > 0 ? firebaseConfig : {
 const app = initializeApp(safeConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const APP_VERSION = "v8.1.0 (Portal Edition)";
-const appId = 'credit-manager-pro-v8-final'; // เปลี่ยน ID เพื่อเริ่ม Database ใหม่ที่สะอาด
+const APP_VERSION = "v8.2.0 (Stable Login)";
+const appId = 'credit-manager-pro-v8-final';
 
 // --- Types ---
 type AccountType = 'credit' | 'bank' | 'cash';
@@ -52,7 +52,7 @@ interface Transaction {
   id: string;
   description: string;
   amount: number;
-  date: string;          // YYYY-MM-DD
+  date: string;
   accountId: string;     
   toAccountId?: string;  
   status: 'paid' | 'unpaid';
@@ -70,19 +70,19 @@ interface RecurringItem {
   day: number;
 }
 
-// --- Helpers ---
+// --- Safe Helpers (ป้องกันหน้าขาว) ---
 const safeNumber = (val: any) => {
   const num = parseFloat(val);
   return isNaN(num) ? 0 : num;
 };
 
-const safeFormatCurrency = (val: any) => {
+const formatCurrency = (val: any) => {
   try {
     return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(safeNumber(val));
   } catch (e) { return '0.00'; }
 };
 
-const safeFormatDate = (date: any) => {
+const formatDate = (date: any) => {
   if (!date) return '-';
   try {
     return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }).format(new Date(date));
@@ -97,7 +97,6 @@ const getThaiMonthName = (dateStr: string) => {
   } catch (e) { return dateStr; }
 };
 
-// แปลง "ธ.ค.-68" -> "2025-12-01"
 const parseThaiMonthToDate = (str: string) => {
   if (!str) return new Date().toISOString().split('T')[0];
   try {
@@ -147,7 +146,7 @@ const CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทา
 
 // --- Components ---
 
-const LoginScreen = ({ onLogin }: { onLogin: () => void }) => (
+const LoginScreen = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () => void }) => (
   <div className="h-full flex flex-col items-center justify-center p-6 bg-slate-900 text-white text-center relative overflow-hidden">
     <div className="absolute top-[-20%] left-[-20%] w-[300px] h-[300px] bg-blue-600/30 rounded-full blur-[80px] animate-pulse"></div>
     <div className="absolute bottom-[-20%] right-[-20%] w-[300px] h-[300px] bg-purple-600/30 rounded-full blur-[80px] animate-pulse delay-700"></div>
@@ -157,9 +156,17 @@ const LoginScreen = ({ onLogin }: { onLogin: () => void }) => (
       </div>
       <h1 className="text-3xl font-bold mb-2 tracking-tight">Credit Manager <span className="text-blue-400">Pro</span></h1>
       <p className="text-slate-400 mb-8 text-sm">จัดการทุกบัญชีในที่เดียว อย่างชาญฉลาด</p>
-      <button onClick={onLogin} className="w-full bg-white text-slate-900 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-50 hover:scale-105 transition-all shadow-lg active:scale-95 group">
-        <span className="w-5 h-5 rounded-full bg-slate-200 group-hover:bg-blue-200 flex items-center justify-center text-xs">G</span> เข้าสู่ระบบด้วย Google
-      </button>
+      
+      <div className="space-y-3">
+        <button onClick={onLogin} className="w-full bg-white text-slate-900 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-50 hover:scale-105 transition-all shadow-lg active:scale-95 group">
+          <span className="w-5 h-5 rounded-full bg-slate-200 group-hover:bg-blue-200 flex items-center justify-center text-xs font-bold text-blue-600">G</span> เข้าสู่ระบบด้วย Google
+        </button>
+        <button onClick={onGuest} className="w-full bg-white/10 text-white py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-white/20 transition-all active:scale-95 border border-white/10">
+          <UserIcon size={18}/> ทดลองใช้งาน (Guest)
+        </button>
+      </div>
+
+      <p className="mt-6 text-[10px] text-slate-500 flex items-center justify-center gap-1"><Lock size={10} /> ข้อมูลของคุณปลอดภัย</p>
     </div>
   </div>
 );
@@ -184,23 +191,23 @@ const AccountCard = ({ account, onClick }: { account: Account, onClick: () => vo
     <div className="space-y-2 relative z-10">
       <div className="flex justify-between items-end">
         <p className="text-xs opacity-80 font-medium">{account.type === 'credit' ? 'วงเงินคงเหลือ' : 'ยอดเงินในบัญชี'}</p>
-        <p className="text-2xl font-bold tracking-tight drop-shadow-sm">{safeFormatCurrency(account.balance)}</p>
+        <p className="text-2xl font-bold tracking-tight drop-shadow-sm">{formatCurrency(account.balance)}</p>
       </div>
-      {account.type === 'credit' && account.limit && account.limit > 0 && (
+      {account.type === 'credit' && safeNumber(account.limit) > 0 && (
         <>
           <div className="w-full bg-black/20 h-1.5 rounded-full overflow-hidden">
-             <div className="bg-white h-full shadow-[0_0_10px_rgba(255,255,255,0.5)] transition-all duration-1000" style={{ width: `${Math.min(((account.limit - account.balance) / account.limit) * 100, 100)}%` }}></div>
+             <div className="bg-white h-full shadow-[0_0_10px_rgba(255,255,255,0.5)] transition-all duration-1000" style={{ width: `${Math.min(((safeNumber(account.limit) - safeNumber(account.balance)) / safeNumber(account.limit)) * 100, 100)}%` }}></div>
           </div>
           <div className="flex justify-between text-[10px] opacity-70 font-medium">
-             <span>ใช้ไป: {safeFormatCurrency((account.limit || 0) - account.balance)}</span>
-             <span>วงเงิน: {safeFormatCurrency(account.limit || 0)}</span>
+             <span>ใช้ไป: {formatCurrency(safeNumber(account.limit) - safeNumber(account.balance))}</span>
+             <span>วงเงิน: {formatCurrency(account.limit)}</span>
           </div>
         </>
       )}
-      {account.totalDebt !== undefined && account.totalDebt > 0 && (
+      {safeNumber(account.totalDebt) > 0 && (
          <div className="mt-2 pt-2 border-t border-white/20 flex items-center gap-2">
            <div className="bg-rose-500/20 p-1 rounded-md"><TrendingUp size={12} className="text-rose-200 rotate-180"/></div>
-           <p className="text-xs text-rose-100 font-bold">ภาระหนี้: {safeFormatCurrency(account.totalDebt)}</p>
+           <p className="text-xs text-rose-100 font-bold">ภาระหนี้: {formatCurrency(account.totalDebt)}</p>
          </div>
       )}
     </div>
@@ -239,7 +246,7 @@ const AddTxForm = ({ accounts, initialData, onSave, onCancel, isEdit }: { accoun
          <select className="w-full p-3 rounded-xl border border-slate-200 text-sm outline-none bg-white mb-2 shadow-sm focus:border-slate-400 transition-colors" value={selectedBank} onChange={e => setSelectedBank(e.target.value)}><option value="">-- กรองตามธนาคาร --</option>{banks.map(b => <option key={b} value={b}>{b}</option>)}</select>
          <select className="w-full p-4 rounded-2xl border-2 border-slate-200 text-sm font-bold bg-white outline-none focus:ring-4 focus:ring-slate-100 focus:border-slate-900 transition-all shadow-sm" value={formData.accountId || ''} onChange={e => setFormData({ ...formData, accountId: e.target.value })}>
            <option value="">-- เลือกบัญชี --</option>
-           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({safeFormatCurrency(a.balance)})</option>)}
+           {filteredAccounts.map(a => <option key={a.id} value={a.id}>{a.type==='credit'?'💳':'🏦'} {a.bank} - {a.name} ({formatCurrency(a.balance)})</option>)}
          </select>
       </div>
 
@@ -308,6 +315,7 @@ export default function App() {
   const [newRecurring, setNewRecurring] = useState<Partial<RecurringItem>>({ day: 1, amount: 0 });
 
   useEffect(() => {
+    // ⚠️ Disable Auto Login for Safety and allow user to choose login method
     return onAuthStateChanged(auth, u => { setUser(u); setAuthLoading(false); });
   }, []);
 
@@ -316,6 +324,10 @@ export default function App() {
         if (e.code === 'auth/unauthorized-domain') alert("Domain not authorized in Firebase Console.");
         else alert("Login failed: " + e.message); 
     }
+  };
+
+  const handleGuestLogin = async () => {
+    try { await signInAnonymously(auth); } catch (e: any) { alert(e.message); }
   };
 
   useEffect(() => {
@@ -547,8 +559,8 @@ export default function App() {
     return sum;
   }, [filteredTx, accounts]);
 
-  if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400 bg-slate-50">Loading...</div>;
-  if (!user) return <LoginScreen onLogin={handleLogin} />;
+  if (loading || authLoading) return <div className="h-screen flex items-center justify-center text-slate-400">Loading...</div>;
+  if (!user) return <LoginScreen onLogin={handleLogin} onGuest={handleGuestLogin} />;
 
   return (
     <div className="h-screen bg-slate-100 font-sans text-slate-900 flex flex-col items-center justify-center overflow-hidden">
@@ -573,10 +585,10 @@ export default function App() {
                             {availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m + '-01')}</option>)}
                         </select>
                       </div>
-                      <h1 className="text-4xl font-bold tracking-tight">{safeFormatCurrency(totalAssets - creditUsedReal - totalDebt)}</h1>
+                      <h1 className="text-4xl font-bold tracking-tight">{formatCurrency(totalAssets - creditUsedReal - totalDebt)}</h1>
                       <div className="grid grid-cols-2 gap-4 mt-6">
-                          <div className="bg-white/10 p-3 rounded-xl border border-white/5 backdrop-blur-sm"><p className="text-[10px] text-emerald-300 flex items-center gap-1"><TrendingUp size={10}/> สินทรัพย์</p><p className="text-lg font-bold">{safeFormatCurrency(totalAssets)}</p></div>
-                          <div className="bg-white/10 p-3 rounded-xl border border-white/5 backdrop-blur-sm"><p className="text-[10px] text-rose-300 flex items-center gap-1"><CreditCard size={10}/> หนี้สินรวม</p><p className="text-lg font-bold">{safeFormatCurrency(creditUsedReal + totalDebt)}</p></div>
+                          <div className="bg-white/10 p-3 rounded-xl border border-white/5 backdrop-blur-sm"><p className="text-[10px] text-emerald-300 flex items-center gap-1"><TrendingUp size={10}/> สินทรัพย์</p><p className="text-lg font-bold">{formatCurrency(totalAssets)}</p></div>
+                          <div className="bg-white/10 p-3 rounded-xl border border-white/5 backdrop-blur-sm"><p className="text-[10px] text-rose-300 flex items-center gap-1"><CreditCard size={10}/> หนี้สินรวม</p><p className="text-lg font-bold">{formatCurrency(creditUsedReal + totalDebt)}</p></div>
                       </div>
                    </div>
                 </div>
@@ -591,7 +603,7 @@ export default function App() {
                          {chartData.slice(0,4).map((d,i) => (
                            <div key={i} className="flex justify-between text-xs items-center">
                               <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shadow-sm" style={{background:d.color}}></span>{d.name}</span>
-                              <span className="font-medium">{safeFormatCurrency(d.value)}</span>
+                              <span className="font-medium">{formatCurrency(d.value)}</span>
                            </div>
                          ))}
                       </div>
@@ -600,7 +612,7 @@ export default function App() {
 
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                    <h3 className="font-bold mb-3 text-sm flex items-center gap-2"><Building size={16}/> สรุปตามธนาคาร ({filterMonth ? getThaiMonthName(filterMonth+'-01') : 'ทั้งหมด'})</h3>
-                   {Object.entries(bankSummary).map(([bank, amt]) => (<div key={bank} className="flex justify-between text-xs mb-2 border-b border-slate-200 pb-2 last:border-0 last:mb-0"><span>{bank}</span><span className="font-bold text-slate-700">{safeFormatCurrency(amt)}</span></div>))}
+                   {Object.entries(bankSummary).map(([bank, amt]) => (<div key={bank} className="flex justify-between text-xs mb-2 border-b border-slate-200 pb-2 last:border-0 last:mb-0"><span>{bank}</span><span className="font-bold text-slate-700">{formatCurrency(amt)}</span></div>))}
                 </div>
              </div>
            )}
@@ -634,10 +646,10 @@ export default function App() {
                      <div className={`absolute left-0 top-0 bottom-0 w-1 ${tx.status === 'paid' ? 'bg-emerald-400' : 'bg-amber-400'}`}></div>
                      <div className="pl-3">
                        <p className="font-bold text-sm truncate w-40 text-slate-800">{tx.description}</p>
-                       <p className="text-[10px] text-slate-400 mt-0.5">{safeFormatDate(tx.date)} • {accounts.find(a=>a.id===tx.accountId)?.name}</p>
+                       <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(tx.date)} • {accounts.find(a=>a.id===tx.accountId)?.name}</p>
                      </div>
                      <div className="text-right">
-                       <p className={`font-bold ${tx.type==='income'?'text-emerald-600':'text-slate-900'}`}>{tx.type==='expense'?'-':''}{safeFormatCurrency(tx.amount)}</p>
+                       <p className={`font-bold ${tx.type==='income'?'text-emerald-600':'text-slate-900'}`}>{tx.type==='expense'?'-':''}{formatCurrency(tx.amount)}</p>
                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-medium ${tx.status==='paid' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>{tx.status==='paid'?'จ่ายแล้ว':'รอจ่าย'}</span>
                      </div>
                   </div>
@@ -654,7 +666,7 @@ export default function App() {
                 <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden mb-4 shadow-sm">
                    <div className="p-4 border-b border-slate-50 bg-slate-50/50"><h3 className="font-bold flex items-center gap-2 text-sm"><UserCircle size={16}/> ข้อมูลส่วนตัว</h3></div>
                    <div className="p-4 text-sm text-slate-600">
-                      <p>อีเมล: {user?.email}</p>
+                      <p>อีเมล: {user?.email || 'Guest Mode'}</p>
                       <p className="text-xs text-slate-400 mt-1 font-mono bg-slate-100 inline-block px-1 rounded">ID: {user?.uid?.slice(0,8)}...</p>
                    </div>
                 </div>
@@ -674,7 +686,7 @@ export default function App() {
                            <div key={r.id} className="flex justify-between items-center text-xs bg-slate-50 p-3 rounded-xl border border-slate-100">
                               <div><span className="font-bold text-slate-700">{r.description}</span> <span className="text-slate-400 ml-1">(ทุกวันที่ {r.day})</span></div>
                               <div className="flex items-center gap-2">
-                                 <span className="font-medium">{safeFormatCurrency(r.amount)}</span>
+                                 <span className="font-medium">{formatCurrency(r.amount)}</span>
                                  <button onClick={() => handleUseRecurring(r)} className="px-3 py-1 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition font-bold">สร้าง</button>
                                  <button onClick={() => deleteDoc(doc(db,'artifacts',appId,'users',user.uid,'recurring',r.id))} className="text-rose-400 hover:text-rose-600 p-1"><X size={14}/></button>
                               </div>
