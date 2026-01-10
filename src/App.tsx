@@ -29,7 +29,7 @@ try {
   db = getFirestore(app);
 } catch (e) { console.error("Firebase Init Error", e); }
 
-const APP_VERSION = "v13.5.1 (Fixed Shared Limit Debt)";
+const APP_VERSION = "v13.5.2 (Fixed Date Filter)";
 const appId = 'credit-manager-pro-v13-5';
 const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/สาธารณูปโภค', 'ผ่อนสินค้า', 'สุขภาพ', 'บันเทิง', 'เงินเดือน', 'อื่นๆ'];
 const THAI_MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
@@ -53,14 +53,24 @@ interface RecurringItem {
 const safeNumber = (val: any) => { const num = parseFloat(val); return isNaN(num) ? 0 : num; };
 const formatCurrency = (val: any) => { try { return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 0 }).format(safeNumber(val)); } catch (e) { return '0.00'; } };
 const formatDate = (date: any) => { try { return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }).format(new Date(date)); } catch (e) { return '-'; } };
+
+// --- ✅ แก้ไขฟังก์ชันนี้ (Fix Date Helper) ---
 const getThaiMonthName = (dateStr: string) => {
   if (!dateStr) return 'ทั้งหมด';
   try {
-    const date = new Date(dateStr + '-01');
+    // ตรวจสอบ input ถ้ามีแค่วันที่ (YYYY-MM) ให้เติม -01 แต่ถ้ามีครบแล้วไม่ต้องเติม
+    // เพื่อป้องกัน Bug การเติม -01 ซ้อนกัน
+    const dateRaw = dateStr.length > 7 ? dateStr : `${dateStr}-01`;
+    const date = new Date(dateRaw);
+    
     if (isNaN(date.getTime())) return dateStr;
-    return `${THAI_MONTHS[date.getMonth()]} ${date.getFullYear() + 543}`;
+    
+    // แสดงผลเป็น: ชื่อเดือน-ปี2หลัก (เช่น ธันวาคม-68)
+    return `${THAI_MONTHS[date.getMonth()]}-${(date.getFullYear() + 543).toString().slice(-2)}`;
   } catch (e) { return dateStr; }
 };
+// ------------------------------------------
+
 const parseThaiMonthToDate = (str: string) => {
     // Format: "ธ.ค.-68" -> "2025-12-01"
     if (!str) return new Date().toISOString().split('T')[0];
