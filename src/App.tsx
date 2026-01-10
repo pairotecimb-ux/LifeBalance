@@ -29,7 +29,7 @@ try {
   db = getFirestore(app);
 } catch (e) { console.error("Firebase Init Error", e); }
 
-const APP_VERSION = "v13.5.0 (Ultimate Full Fix)";
+const APP_VERSION = "v13.5.1 (Fixed Shared Limit Debt)";
 const appId = 'credit-manager-pro-v13-5';
 const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/สาธารณูปโภค', 'ผ่อนสินค้า', 'สุขภาพ', 'บันเทิง', 'เงินเดือน', 'อื่นๆ'];
 const THAI_MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
@@ -273,12 +273,19 @@ export default function App() {
                     dueDay: parseInt(clean(getCol('กำหนดชำระ'))) || 0
                  };
                  accData.limit = num(getCol('วงเงินทั้งหมด')) || 0;
+
+                 // --- แก้ไขตรงนี้ (Fix for Shared Limit Debt) ---
                  if (type === 'credit') {
-                    const limitRem = num(getCol('วงเงินคงเหลือ'));
+                    // ไม่ใช้ 'วงเงินคงเหลือ' (Remaining) ในการคำนวณ Balance ของบัตรเครดิต
+                    // เพราะบัตรวงเงินร่วมมักจะแสดงยอดคงเหลือเท่ากันหมด ทำให้หนี้เบิ้ล
+                    // ให้ใช้ 'วงเงินทั้งหมด' (Limit) ลบ 'วงเงินที่ใช้ไป' (Used) แทน
+                    // ถ้า 'วงเงินที่ใช้ไป' เป็น 0 แสดงว่าบัตรนั้นไม่ได้สร้างหนี้ (Balance = Limit)
                     const limitUsed = num(getCol('วงเงินที่ใช้ไป'));
-                    // แก้หนี้เบิ้ล: ถ้าใช้ไป 0 ให้ถือว่าเต็มวงเงิน
-                    accData.balance = limitRem > 0 ? limitRem : (limitUsed === 0 ? accData.limit : accData.limit - limitUsed);
-                 } else { accData.balance = balanceVal; }
+                    accData.balance = accData.limit - limitUsed;
+                 } else { 
+                    accData.balance = balanceVal; 
+                 }
+                 // ----------------------------------------------
                  
                  if (accId) batch.update(doc(db,'artifacts',appId,'users',user.uid,'accounts',accId), accData);
                  else {
