@@ -29,7 +29,7 @@ try {
   db = getFirestore(app);
 } catch (e) { console.error("Firebase Init Error", e); }
 
-const APP_VERSION = "v13.5.2 (Fixed Date Filter)";
+const APP_VERSION = "v13.5.3 (Fixed Thai Date Format)";
 const appId = 'credit-manager-pro-v13-5';
 const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/สาธารณูปโภค', 'ผ่อนสินค้า', 'สุขภาพ', 'บันเทิง', 'เงินเดือน', 'อื่นๆ'];
 const THAI_MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
@@ -54,22 +54,26 @@ const safeNumber = (val: any) => { const num = parseFloat(val); return isNaN(num
 const formatCurrency = (val: any) => { try { return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 0 }).format(safeNumber(val)); } catch (e) { return '0.00'; } };
 const formatDate = (date: any) => { try { return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }).format(new Date(date)); } catch (e) { return '-'; } };
 
-// --- ✅ แก้ไขฟังก์ชันนี้ (Fix Date Helper) ---
+// --- ✅ แก้ไขใหม่: อ่าน String ตรงๆ ไม่แปลง Date เพื่อความแม่นยำ ---
 const getThaiMonthName = (dateStr: string) => {
-  if (!dateStr) return 'ทั้งหมด';
-  try {
-    // ตรวจสอบ input ถ้ามีแค่วันที่ (YYYY-MM) ให้เติม -01 แต่ถ้ามีครบแล้วไม่ต้องเติม
-    // เพื่อป้องกัน Bug การเติม -01 ซ้อนกัน
-    const dateRaw = dateStr.length > 7 ? dateStr : `${dateStr}-01`;
-    const date = new Date(dateRaw);
-    
-    if (isNaN(date.getTime())) return dateStr;
-    
-    // แสดงผลเป็น: ชื่อเดือน-ปี2หลัก (เช่น ธันวาคม-68)
-    return `${THAI_MONTHS[date.getMonth()]}-${(date.getFullYear() + 543).toString().slice(-2)}`;
-  } catch (e) { return dateStr; }
+  if (!dateStr || dateStr === 'all') return 'ทั้งหมด';
+  // รับค่า YYYY-MM หรือ YYYY-MM-DD
+  // ใช้วิธี split ตัดคำ เพื่อหลีกเลี่ยง Timezone bug
+  const parts = dateStr.split('-'); 
+  if (parts.length < 2) return dateStr;
+
+  const year = parseInt(parts[0]);
+  const month = parseInt(parts[1]);
+
+  if (isNaN(year) || isNaN(month)) return dateStr;
+
+  // แปลงเป็น พ.ศ. และชื่อเดือนเต็ม
+  const thaiYear = year + 543;
+  const thaiMonth = THAI_MONTHS[month - 1]; // month 1 = index 0
+
+  return `${thaiMonth} ${thaiYear}`; // ตัวอย่าง: "ธันวาคม 2568"
 };
-// ------------------------------------------
+// -----------------------------------------------------------
 
 const parseThaiMonthToDate = (str: string) => {
     // Format: "ธ.ค.-68" -> "2025-12-01"
@@ -436,10 +440,10 @@ export default function App() {
              <div className="space-y-6">
                 <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl">
                    <div className="flex justify-between items-center mb-4">
-                     <p className="text-xs text-slate-400">สรุป ({filterMonth ? getThaiMonthName(filterMonth + '-01') : 'ทั้งหมด'})</p>
+                     <p className="text-xs text-slate-400">สรุป ({filterMonth ? getThaiMonthName(filterMonth) : 'ทั้งหมด'})</p>
                      <select className="bg-white/10 text-xs p-1 rounded text-white border-none" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}>
                         <option value="">ทั้งหมด</option>
-                        {availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m + '-01')}</option>)}
+                        {availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m)}</option>)}
                      </select>
                    </div>
                    <h1 className="text-4xl font-bold">{formatCurrency(totalAssets - (creditLimit - creditBal) - totalDebt)}</h1>
@@ -450,7 +454,7 @@ export default function App() {
                 </div>
 
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                   <h3 className="font-bold mb-3 text-sm flex items-center gap-2"><Building size={16}/> สรุปตามธนาคาร ({filterMonth ? getThaiMonthName(filterMonth+'-01') : 'ทั้งหมด'})</h3>
+                   <h3 className="font-bold mb-3 text-sm flex items-center gap-2"><Building size={16}/> สรุปตามธนาคาร ({filterMonth ? getThaiMonthName(filterMonth) : 'ทั้งหมด'})</h3>
                    {Object.entries(bankSummary).map(([bank, amt]) => (
                      <div key={bank} className="flex justify-between text-xs mb-2 border-b border-slate-200 pb-2 last:border-0 last:mb-0"><span>{bank}</span><div><span className="text-emerald-600 mr-2">+{formatCurrency(amt.income)}</span><span className="text-rose-600">-{formatCurrency(amt.expense)}</span></div></div>
                    ))}
@@ -489,7 +493,7 @@ export default function App() {
            {activeTab === 'transactions' && (
              <div className="pt-4">
                 <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
-                   <select className="bg-white border rounded-xl text-xs p-2.5 min-w-[100px] shadow-sm outline-none focus:border-slate-400" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}><option value="">ทุกเดือน</option>{availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m+'-01')}</option>)}</select>
+                   <select className="bg-white border rounded-xl text-xs p-2.5 min-w-[100px] shadow-sm outline-none focus:border-slate-400" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}><option value="">ทุกเดือน</option>{availableMonths.map(m => <option key={m} value={m}>{getThaiMonthName(m)}</option>)}</select>
                    <select className="bg-white border rounded-xl text-xs p-2.5 shadow-sm outline-none focus:border-slate-400" value={filterType} onChange={e => setFilterType(e.target.value)}><option value="all">ทุกประเภท</option><option value="expense">รายจ่าย</option><option value="income">รายรับ</option></select>
                    <select className="bg-white border rounded-xl text-xs p-2.5 shadow-sm outline-none focus:border-slate-400" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}><option value="all">ทุกสถานะ</option><option value="paid">จ่ายแล้ว</option><option value="unpaid">รอจ่าย</option></select>
                    <select className="bg-white border rounded-xl text-xs p-2.5 shadow-sm outline-none focus:border-slate-400" value={filterBank} onChange={e => setFilterBank(e.target.value)}><option value="all">ทุกธนาคาร</option>{[...new Set(accounts.map(a => a.bank))].map(b => <option key={b} value={b}>{b}</option>)}</select>
