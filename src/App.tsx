@@ -29,7 +29,7 @@ try {
   db = getFirestore(app);
 } catch (e) { console.error("Firebase Init Error", e); }
 
-const APP_VERSION = "v13.5.3 (Fixed Thai Date Format)";
+const APP_VERSION = "v13.5.4 (Fixed Year 3111)";
 const appId = 'credit-manager-pro-v13-5';
 const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/สาธารณูปโภค', 'ผ่อนสินค้า', 'สุขภาพ', 'บันเทิง', 'เงินเดือน', 'อื่นๆ'];
 const THAI_MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
@@ -54,26 +54,30 @@ const safeNumber = (val: any) => { const num = parseFloat(val); return isNaN(num
 const formatCurrency = (val: any) => { try { return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 0 }).format(safeNumber(val)); } catch (e) { return '0.00'; } };
 const formatDate = (date: any) => { try { return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }).format(new Date(date)); } catch (e) { return '-'; } };
 
-// --- ✅ แก้ไขใหม่: อ่าน String ตรงๆ ไม่แปลง Date เพื่อความแม่นยำ ---
+// --- ✅ แก้ไขฟังก์ชันนี้: เช็คก่อนว่าปีเป็น พ.ศ. หรือยัง (ป้องกัน 3111) ---
 const getThaiMonthName = (dateStr: string) => {
   if (!dateStr || dateStr === 'all') return 'ทั้งหมด';
-  // รับค่า YYYY-MM หรือ YYYY-MM-DD
-  // ใช้วิธี split ตัดคำ เพื่อหลีกเลี่ยง Timezone bug
+  
   const parts = dateStr.split('-'); 
   if (parts.length < 2) return dateStr;
 
-  const year = parseInt(parts[0]);
+  let year = parseInt(parts[0]);
   const month = parseInt(parts[1]);
 
   if (isNaN(year) || isNaN(month)) return dateStr;
 
-  // แปลงเป็น พ.ศ. และชื่อเดือนเต็ม
-  const thaiYear = year + 543;
-  const thaiMonth = THAI_MONTHS[month - 1]; // month 1 = index 0
+  // Logic ป้องกันการบวก 543 ซ้ำ
+  // ถ้าปีน้อยกว่า 2400 แสดงว่าเป็น ค.ศ. (เช่น 2025) -> ให้บวก 543
+  // ถ้าปีมากกว่า 2400 แสดงว่าเป็น พ.ศ. อยู่แล้ว (เช่น 2568) -> ใช้ค่านั้นเลย
+  let thaiYear = year;
+  if (year < 2400) {
+      thaiYear = year + 543;
+  }
 
-  return `${thaiMonth} ${thaiYear}`; // ตัวอย่าง: "ธันวาคม 2568"
+  const thaiMonth = THAI_MONTHS[month - 1]; 
+  return `${thaiMonth} ${thaiYear}`; // ผลลัพธ์: "ธันวาคม 2568"
 };
-// -----------------------------------------------------------
+// --------------------------------------------------------------------
 
 const parseThaiMonthToDate = (str: string) => {
     // Format: "ธ.ค.-68" -> "2025-12-01"
