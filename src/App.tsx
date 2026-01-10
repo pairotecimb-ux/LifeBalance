@@ -29,55 +29,30 @@ try {
   db = getFirestore(app);
 } catch (e) { console.error("Firebase Init Error", e); }
 
-const APP_VERSION = "v13.2.0 (Stable)";
-const appId = 'credit-manager-pro-v13-2';
+const APP_VERSION = "v13.5.0 (Ultimate Full Fix)";
+const appId = 'credit-manager-pro-v13-5';
 const DEFAULT_CATEGORIES = ['ทั่วไป', 'อาหาร', 'เดินทาง', 'ช้อปปิ้ง', 'บิล/สาธารณูปโภค', 'ผ่อนสินค้า', 'สุขภาพ', 'บันเทิง', 'เงินเดือน', 'อื่นๆ'];
+const THAI_MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 
 // --- Types ---
-type AccountType = 'credit' | 'bank' | 'cash';
-
 interface Account {
-  id: string;
-  name: string;
-  bank: string;
-  type: AccountType;
-  accountNumber?: string;
-  cardType?: string;
-  limit?: number;        
-  balance: number;       
-  totalDebt?: number;    
-  statementDay?: number;
-  dueDay?: number;
-  color: string;
+  id: string; name: string; bank: string; type: 'credit' | 'bank' | 'cash';
+  accountNumber?: string; cardType?: string; limit?: number; balance: number;
+  totalDebt?: number; statementDay?: number; dueDay?: number; color: string;
 }
-
 interface Transaction {
-  id: string;
-  description: string;
-  amount: number;
-  date: string;          
-  accountId: string;     
-  toAccountId?: string;  
-  status: 'paid' | 'unpaid';
-  category: string;
-  type: 'expense' | 'income' | 'transfer';
-  installment?: string;
+  id: string; description: string; amount: number; date: string; accountId: string;
+  toAccountId?: string; status: 'paid' | 'unpaid'; category: string;
+  type: 'expense' | 'income' | 'transfer'; installment?: string;
 }
-
 interface RecurringItem {
-  id: string;
-  description: string;
-  amount: number;
-  accountId: string;
-  category: string;
-  day: number;
+  id: string; description: string; amount: number; accountId: string; category: string; day: number;
 }
 
 // --- Helpers ---
 const safeNumber = (val: any) => { const num = parseFloat(val); return isNaN(num) ? 0 : num; };
-const formatCurrency = (val: any) => new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 0 }).format(safeNumber(val));
+const formatCurrency = (val: any) => { try { return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 0 }).format(safeNumber(val)); } catch (e) { return '0.00'; } };
 const formatDate = (date: any) => { try { return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }).format(new Date(date)); } catch (e) { return '-'; } };
-const THAI_MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 const getThaiMonthName = (dateStr: string) => {
   if (!dateStr) return 'ทั้งหมด';
   try {
@@ -87,32 +62,29 @@ const getThaiMonthName = (dateStr: string) => {
   } catch (e) { return dateStr; }
 };
 const parseThaiMonthToDate = (str: string) => {
+    // Format: "ธ.ค.-68" -> "2025-12-01"
     if (!str) return new Date().toISOString().split('T')[0];
     try {
         const parts = str.trim().split(/[-/]/);
         if (parts.length < 2) return new Date().toISOString().split('T')[0];
         let mStr = parts[0], yStr = parts[1];
-        if(!isNaN(Number(mStr)) && mStr.length === 4) { return `${mStr}-${yStr.padStart(2,'0')}-01`; } // already YYYY-MM
+        if(!isNaN(Number(mStr)) && mStr.length === 4) return `${mStr}-${yStr.padStart(2,'0')}-01`;
         const shortMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
         const monthIndex = shortMonths.findIndex(m => mStr.includes(m));
         let year = parseInt(yStr);
-        if (year < 100) year += 2500; year -= 543;
-        if (monthIndex > -1 && !isNaN(year)) {
-             const m = (monthIndex + 1).toString().padStart(2, '0');
-             return `${year}-${m}-01`;
-        }
+        if (year < 100) year += 2500; else year -= 543;
+        if (monthIndex > -1 && !isNaN(year)) return `${year}-${(monthIndex + 1).toString().padStart(2, '0')}-01`;
     } catch (e) {}
     return new Date().toISOString().split('T')[0];
 };
 const fixScientificNotation = (str: string) => {
     if (!str) return '';
-    let cleanStr = str.toUpperCase();
-    if (cleanStr.includes('+') && !cleanStr.includes('E')) cleanStr = cleanStr.replace('+', 'E+');
+    let cleanStr = str.toUpperCase().replace(/\+/g, '');
     if (cleanStr.includes('E')) {
         const num = Number(cleanStr);
         if (!isNaN(num)) return num.toLocaleString('fullwide', { useGrouping: false });
     }
-    return str;
+    return str.replace(/[^0-9a-zA-Z]/g, '');
 };
 const getBankColor = (bankName: string) => {
     const colors: any = { 'ไทยพาณิชย์': 'from-purple-700 to-purple-900', 'SCB': 'from-purple-700 to-purple-900', 'กสิกร': 'from-emerald-600 to-emerald-800', 'Kbank': 'from-emerald-600 to-emerald-800', 'กรุงศรี': 'from-yellow-600 to-yellow-800', 'กรุงเทพ': 'from-blue-700 to-blue-900', 'BBL': 'from-blue-700 to-blue-900', 'เงินสด': 'from-green-600 to-green-800' };
@@ -120,7 +92,48 @@ const getBankColor = (bankName: string) => {
     return colors[key || ''] || 'from-slate-600 to-slate-800';
 };
 
-// --- Main Component ---
+// --- Sub-Components ---
+const LoginScreen = ({ onLogin, onGuest }: { onLogin: () => void, onGuest: () => void }) => (
+  <div className="h-full flex flex-col items-center justify-center p-6 bg-slate-900 text-white text-center">
+    <Wallet size={64} className="mb-6 text-blue-400" />
+    <h1 className="text-3xl font-bold mb-2">Credit Manager V13</h1>
+    <p className="text-slate-400 mb-8">จัดการการเงินให้ง่ายขึ้น</p>
+    <div className="space-y-4 w-full max-w-sm">
+       <button onClick={onLogin} className="w-full bg-white text-slate-900 py-3 rounded-xl font-bold flex justify-center items-center gap-2">Google Login</button>
+       <button onClick={onGuest} className="w-full bg-white/10 py-3 rounded-xl font-bold flex justify-center items-center gap-2 border border-white/20">Guest Mode</button>
+    </div>
+  </div>
+);
+
+// --- Settings Component (Isolated) ---
+const SettingsView = ({ user, accounts, categories, setShowImport, handleExportCSV, setShowCategoryMgr, handleLogout, handleSaveRecurring, newRecurring, setNewRecurring, recurringItems, handleDeleteRecurring }: any) => {
+  return (
+    <div className="pt-4 pb-24 space-y-4">
+      <h2 className="text-2xl font-bold px-1">ตั้งค่า</h2>
+      <div className="bg-white rounded-2xl border p-4"><h3 className="font-bold text-sm mb-2">ข้อมูลผู้ใช้</h3><p className="text-sm text-slate-600">{user?.email || 'Guest Mode'}</p></div>
+      
+      <div className="bg-white rounded-2xl border p-4">
+         <h3 className="font-bold text-sm mb-3 flex items-center gap-2"><Tag size={16}/> จัดการหมวดหมู่</h3>
+         <button onClick={() => setShowCategoryMgr(true)} className="w-full py-2 bg-slate-100 rounded-lg text-xs font-bold text-slate-600">แก้ไขหมวดหมู่</button>
+      </div>
+
+      <div className="bg-white rounded-2xl border p-4"><h3 className="font-bold text-sm mb-2">รายจ่ายประจำ</h3>
+         <div className="flex gap-2 mb-2"><input placeholder="รายการ" className="flex-[2] p-2 border rounded text-xs" value={newRecurring.description} onChange={e=>setNewRecurring({...newRecurring, description:e.target.value})}/><input type="number" placeholder="บาท" className="w-16 p-2 border rounded text-xs" onChange={e=>setNewRecurring({...newRecurring, amount:e.target.value})}/><input type="number" placeholder="วัน" className="w-12 p-2 border rounded text-xs" onChange={e=>setNewRecurring({...newRecurring, day:e.target.value})}/></div>
+         <select className="w-full p-2 border rounded text-xs mb-2" onChange={e=>setNewRecurring({...newRecurring, accountId:e.target.value})} value={newRecurring.accountId || ''}><option value="">เลือกบัญชีตัดเงิน...</option>{accounts.map((a:any)=><option key={a.id} value={a.id}>{a.bank} - {a.name}</option>)}</select>
+         <button onClick={handleSaveRecurring} className="w-full py-2 bg-slate-900 text-white rounded text-xs">เพิ่มรายการประจำ</button>
+         <div className="mt-2 space-y-1">{recurringItems.map((r:any)=><div key={r.id} className="flex justify-between text-xs bg-slate-50 p-2 rounded"><span>{r.description} ({formatCurrency(r.amount)}) ทุกวันที่ {r.day}</span><button onClick={()=>handleDeleteRecurring(r.id)} className="text-rose-500">x</button></div>)}</div>
+      </div>
+
+      <div className="bg-white rounded-2xl border overflow-hidden">
+         <button onClick={() => setShowImport(true)} className="w-full p-4 border-b text-left text-sm flex gap-2"><Upload size={16}/> นำเข้า CSV (Import)</button>
+         <button onClick={handleExportCSV} className="w-full p-4 border-b text-left text-sm flex gap-2"><Download size={16}/> ส่งออก CSV (Backup)</button>
+         <button onClick={handleLogout} className="w-full p-4 text-left text-sm flex gap-2 text-rose-600"><LogOut size={16}/> ออกจากระบบ</button>
+      </div>
+    </div>
+  );
+};
+
+// --- Main App ---
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -130,7 +143,7 @@ export default function App() {
   const [recurringItems, setRecurringItems] = useState<any[]>([]);
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(false);
-
+  
   // UI States
   const [showAddTx, setShowAddTx] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -371,12 +384,6 @@ export default function App() {
     return sum;
   }, [filteredTx, accounts]);
 
-  const chartData = useMemo(() => {
-    const data: Record<string, number> = {};
-    filteredTx.filter(t => t.type === 'expense').forEach(t => data[t.category] = (data[t.category] || 0) + t.amount);
-    return Object.entries(data).sort((a,b)=>b[1]-a[1]).map(([name, value], i) => ({ name, value, color: ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6'][i%5] }));
-  }, [filteredTx]);
-
   const monthlySummary = useMemo(() => {
     const income = filteredTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
     const expense = filteredTx.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
@@ -402,6 +409,7 @@ export default function App() {
         {/* Header */}
         <div className="px-6 pt-12 pb-2 bg-white flex justify-between items-center shrink-0 z-20">
            <div><p className="text-[10px] text-slate-400 uppercase">My Wallet</p><p className="font-bold text-lg">Dashboard</p></div>
+           {/* ✅ ปุ่มตั้งค่า แก้ไขแล้ว */}
            <button onClick={() => setActiveTab('settings')} className="p-2 bg-slate-50 rounded-full hover:bg-slate-100"><Settings size={20}/></button>
         </div>
 
@@ -423,11 +431,6 @@ export default function App() {
                       <div className="bg-white/10 p-3 rounded-xl"><p className="text-[10px] text-rose-300">หนี้สิน</p><p className="text-lg font-bold">{formatCurrency((creditLimit - creditBal) + totalDebt)}</p></div>
                    </div>
                 </div>
-                
-                <div className="bg-white border rounded-2xl p-4 shadow-sm flex items-center gap-6">
-                   <div className="w-28 h-28 rounded-full flex-none shadow-inner" style={{background: `conic-gradient(${chartData.length ? chartData.map((d,i,arr) => { const prev = arr.slice(0,i).reduce((s,x)=>s+x.value,0); const total = arr.reduce((s,x)=>s+x.value,0); return `${d.color} ${(prev/total)*100}% ${((prev+d.value)/total)*100}%` }).join(',') : '#f1f5f9 0% 100%'})`}}></div>
-                   <div className="flex-1 space-y-2">{chartData.slice(0,4).map((d,i) => (<div key={i} className="flex justify-between text-xs items-center"><span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shadow-sm" style={{background:d.color}}></span>{d.name}</span><span className="font-medium">{formatCurrency(d.value)}</span></div>))}</div>
-                </div>
 
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                    <h3 className="font-bold mb-3 text-sm flex items-center gap-2"><Building size={16}/> สรุปตามธนาคาร ({filterMonth ? getThaiMonthName(filterMonth+'-01') : 'ทั้งหมด'})</h3>
@@ -445,7 +448,7 @@ export default function App() {
                    {/* ✅ ปุ่มเพิ่มบัญชี Manual กลับมาแล้ว (มุมขวาบนของหน้า Wallet) */}
                    <button onClick={() => { setIsNewAccount(true); setEditingAccount({ id: '', name: '', bank: '', type: 'bank', balance: 0, color: 'from-slate-700 to-slate-900' }); }} className="bg-slate-900 text-white w-8 h-8 rounded-full flex items-center justify-center shadow hover:scale-110 transition"><Plus size={16}/></button>
                 </div>
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide"><button onClick={() => setFilterBank('all')} className={`px-3 py-1 rounded-full text-xs border ${filterBank==='all'?'bg-black text-white':''}`}>ทั้งหมด</button>{[...new Set(accounts.map(a => a.bank))].sort().map(bank => (<button key={bank} onClick={() => setFilterBank(bank)} className={`px-3 py-1 rounded-full text-xs border ${filterBank===bank?'bg-black text-white':''}`}>{bank}</button>))}</div>
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide"><select className="px-3 py-1 rounded-full text-xs border bg-white" value={filterBank} onChange={e=>setFilterBank(e.target.value)}><option value="all">ทั้งหมด</option>{[...new Set(accounts.map(a => a.bank))].sort().map(bank => (<option key={bank} value={bank}>{bank}</option>))}</select></div>
                 {[...new Set(accounts.filter(a => filterBank === 'all' || a.bank === filterBank).map(a => a.bank))].sort().map(bank => (
                   <div key={bank}>
                     <h3 className="text-sm font-bold text-slate-500 mb-2">{bank}</h3>
@@ -477,7 +480,10 @@ export default function App() {
                 <div className="space-y-2 mb-8">{filteredTx.map(tx => (
                   <div key={tx.id} onClick={() => { setTxForm(tx); setShowAddTx(true); }} className="bg-white p-4 border border-slate-100 rounded-2xl flex justify-between items-center cursor-pointer">
                      <div><p className="font-bold text-sm truncate w-40">{tx.category}<br/><span className="text-[10px] text-slate-400 font-normal">{tx.description}</span></p><p className="text-[10px] text-slate-400">{formatDate(tx.date)} • {accounts.find(a=>a.id===tx.accountId)?.name}</p></div>
-                     <div className="text-right"><p className={`font-bold ${tx.type==='income'?'text-emerald-600':'text-slate-900'}`}>{tx.type==='expense'?'-':''}{formatCurrency(tx.amount)}</p><span className={`text-[9px] px-2 py-0.5 rounded-full ${tx.status==='paid' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>{tx.status==='paid'?'จ่ายแล้ว':'รอจ่าย'}</span></div>
+                     <div className="text-right">
+                         <p className={`font-bold ${tx.type==='income'?'text-emerald-600':'text-slate-900'}`}>{tx.type==='expense'?'-':''}{formatCurrency(tx.amount)}</p>
+                         <button onClick={(e)=>{e.stopPropagation();}} className={`text-[9px] px-2 py-0.5 rounded-full ${tx.status==='paid' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>{tx.status==='paid'?'จ่ายแล้ว':'รอจ่าย'}</button>
+                     </div>
                   </div>
                 ))}</div>
                 <div className="bg-slate-50 p-4 rounded-xl text-center">
@@ -534,6 +540,15 @@ export default function App() {
                       {txForm.type === 'transfer' && <select className="w-full p-4 rounded-2xl border-2 font-bold text-blue-600" value={txForm.toAccountId || ''} onChange={e => setTxForm({ ...txForm, toAccountId: e.target.value })}><option value="">-- ปลายทาง --</option>{accounts.filter(a => a.id !== txForm.accountId).map(a => <option key={a.id} value={a.id}>{a.bank} - {a.name}</option>)}</select>}
                    </div>
                    <div className="space-y-3"><input type="text" placeholder="รายละเอียด" className="w-full p-4 rounded-2xl border" value={txForm.description || ''} onChange={e => setTxForm({ ...txForm, description: e.target.value })} /><div className="flex gap-3"><input type="date" className="flex-1 p-3 rounded-2xl border text-sm" value={txForm.date} onChange={e => setTxForm({ ...txForm, date: e.target.value })} /><select className="flex-1 p-3 rounded-2xl border text-sm" value={txForm.category} onChange={e => setTxForm({...txForm, category: e.target.value})}>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></div></div>
+                   {txForm.type === 'expense' && (
+                     <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-2xl">
+                        <span className="text-xs text-slate-500 pl-2 font-bold">สถานะ:</span>
+                        <div className="flex-1 flex bg-white rounded-xl p-1 shadow-sm">
+                           <button onClick={() => setTxForm({...txForm, status: 'paid'})} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${txForm.status==='paid'?'bg-emerald-100 text-emerald-700 shadow-sm':'text-slate-400 hover:bg-slate-50'}`}>จ่ายแล้ว</button>
+                           <button onClick={() => setTxForm({...txForm, status: 'unpaid'})} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${txForm.status==='unpaid'?'bg-amber-100 text-amber-700 shadow-sm':'text-slate-400 hover:bg-slate-50'}`}>รอจ่าย</button>
+                        </div>
+                     </div>
+                   )}
                    <button onClick={handleSaveTx} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-xl">บันทึก</button>
                    {txForm.id && <button onClick={handleDeleteTx} className="w-full py-4 text-rose-600 font-bold">ลบรายการ</button>}
                 </div>
